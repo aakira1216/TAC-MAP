@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>Offline Map Tracker</title>
+    <style>
+        :root { --bg: #0f172a; --panel: #1e293b; --accent: #3b82f6; --success: #10b981; }
+        body { margin: 0; background: var(--bg); color: white; font-family: sans-serif; overflow: hidden; height: 100dvh; display: flex; flex-direction: column; }
+        
+        /* ヘッダー */
+        .header { display: flex; gap: 8px; padding: 10px; background: var(--panel); z-index: 1000; border-bottom: 1px solid #334155; }
+        .nav-btn { flex: 1; padding: 12px; border-radius: 8px; border: none; font-size: 12px; font-weight: bold; color: white; background: #475569; }
+
+        /* メイン表示エリア */
+        #viewport { position: relative; flex: 1; overflow: hidden; background: #000; touch-action: none; display: flex; align-items: center; justify-content: center; }
+        #map-container { position: absolute; transform-origin: 0 0; left: 0; top: 0; }
+        #map-img { display: none; }
+        
+        /* マーカー */
+        .dot { position: absolute; width: 24px; height: 24px; border-radius: 50%; border: 2px solid #fff; transform: translate(-50%, -50%); display: none; z-index: 10; }
+        #p1-dot { background: #ef4444; }
+        #p2-dot { background: #22c55e; }
+        #user-dot { width: 0; height: 0; border-left: 12px solid transparent; border-right: 12px solid transparent; border-bottom: 28px solid var(--accent); background: none; border-radius: 0; z-index: 20; }
+        #rect { position: absolute; border: 2px dashed var(--accent); background: rgba(59, 130, 246, 0.2); display: none; }
+
+        /* 操作パネル */
+        #panel { height: 40vh; padding: 15px; background: var(--bg); border-top: 1px solid #334155; overflow-y: auto; }
+        .step { display: none; }
+        .active { display: block; }
+        
+        button.action { width: 100%; padding: 16px; margin: 8px 0; border-radius: 12px; border: none; font-size: 16px; font-weight: bold; cursor: pointer; }
+        .blue { background: var(--accent); color: white; }
+        .green { background: var(--success); color: white; }
+        
+        input { width: 100%; padding: 12px; margin: 5px 0; border-radius: 8px; border: 1px solid #334155; background: var(--panel); color: white; box-sizing: border-box; font-size: 16px; }
+        
+        /* 保存リストのスタイル */
+        .map-item { background: var(--panel); padding: 12px; margin-bottom: 8px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
+        .map-item span { font-weight: bold; }
+        .del-btn { background: #ef4444; padding: 5px 10px; border-radius: 4px; font-size: 11px; border: none; color: white; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <button class="nav-btn" onclick="showStep(1)">新規作成</button>
+    <button class="nav-btn" onclick="loadMapList()">保存済みマップ</button>
+</div>
+
+<div id="viewport">
+    <div id="map-container">
+        <img id="map-img">
+        <div id="p1-dot" class="dot"></div>
+        <div id="p2-dot" class="dot"></div>
+        <div id="user-dot" class="dot"></div>
+        <div id="rect"></div>
+    </div>
+</div>
+
+<div id="panel">
+    <div id="s1" class="step active">
+        <p>【STEP 1】 地図画像を選択</p>
+        <input type="file" id="file-input" accept="image/*">
+    </div>
+
+    <div id="s2" class="step">
+        <p id="guide" style="color:#ef4444;">1. P1(赤)の地点をタップしてください</p>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+            <input type="number" id="lat1" placeholder="P1緯度" step="any">
+            <input type="number" id="lng1" placeholder="P1経度" step="any">
+            <input type="number" id="lat2" placeholder="P2緯度" step="any">
+            <input type="number" id="lng2" placeholder="P2経度" step="any">
+        </div>
+        <button onclick="showStep(3)" class="action blue">次へ（範囲指定）</button>
+    </div>
+
+    <div id="s3" class="step">
+        <p>地図をなぞって表示範囲を囲んでください</p>
+        <input type="text" id="map-name" placeholder="マップの名前（例: 裏山散策）">
+        <button onclick="saveAndStart()" class="action green">保存して追跡開始</button>
+    </div>
+
+    <div id="s4" class="step">
+        <div id="status" style="font-size:12px; color:#94a3b8; text-align:center;">GPS信号を待機中...</div>
+        <button id="gyro" class="action" onclick="askGyro()" style="background:#ea580c; color:white; display:none;">方位計を有効化</button>
+        <button onclick="location.reload()" class="action" style="background:#475569; color:white;">終了する</button>
+    </div>
+
+    <div id="s-list" class="step">
+        <p>保存済みマップ一覧</p>
+        <div id="map-list-container"></div>
+    </div>
+</div>
+
+<script>
+    const state = { step: 1, p1: null, p2: null, area: null, scale: 1, offsetX: 0, offsetY: 0, rot: 0 };
+    const el = id => document.getElementById(id);
+    let mapDataUrl = "";
+
+    // --- 画像読み込み ---
+    el('file-input').onchange = e => {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+        reader.onload = event => {
+            mapDataUrl = event.target.result;
+            const img = el('map-img');
+            img.onload = () => { img.style.display = 'block'; fitImage(); showStep(2); };
+            img.src = mapDataUrl;
+        };
+        reader.readAsDataURL(file);
+    };
+
+    function fitImage() {
+        const img = el('map-img'), vw = el('viewport').clientWidth, vh = el('viewport').clientHeight;
+        state.scale = Math.min(vw / img.naturalWidth, vh / img.naturalHeight);
+        state.offsetX = (vw - img.naturalWidth * state.scale) / 2;
+        state.offsetY = (vh - img.naturalHeight * state.scale) / 2;
+        updateTransform();
+    }
+
+    function updateTransform() {
+        el('map-container').style.transform = `translate(${state.offsetX}px, ${state.offsetY}px) scale(${state.scale})`;
+    }
+
+    // --- タップ操作 ---
+    el('viewport').onpointerdown = e => {
+        const r = el('viewport').getBoundingClientRect();
+        const x = (e.clientX - r.left - state.offsetX) / state.scale;
+        const y = (e.clientY - r.top - state.offsetY) / state.scale;
+
+        if (state.step === 2) {
+            if (!state.p1) {
+                state.p1 = {x, y}; updateD('p1-dot', x, y);
+                el('guide').innerText = "2. P2(緑)の地点をタップしてください";
+                el('guide').style.color = "#22c55e";
+            } else {
+                state.p2 = {x, y}; updateD('p2-dot', x, y);
+            }
+        } else if (state.step === 3) {
+            state.dragging = true; state.start = {x, y};
+            el('rect').style.display = 'block';
+        }
+    };
+
+    window.onpointermove = e => {
+        if (!state.dragging) return;
+        const r = el('viewport').getBoundingClientRect();
+        const x = (e.clientX - r.left - state.offsetX) / state.scale;
+        const y = (e.clientY - r.top - state.offsetY) / state.scale;
+        state.area = { x: Math.min(state.start.x, x), y: Math.min(state.start.y, y), w: Math.abs(x - state.start.x), h: Math.abs(y - state.start.y) };
+        const rect = el('rect');
+        rect.style.left = state.area.x + 'px'; rect.style.top = state.area.y + 'px';
+        rect.style.width = state.area.w + 'px'; rect.style.height = state.area.h + 'px';
+    };
+    window.onpointerup = () => state.dragging = false;
+
+    // --- 保存と読み込み ---
+    function saveAndStart() {
+        const name = el('map-name').value || "無題のマップ";
+        const config = {
+            name, img: mapDataUrl, p1: state.p1, p2: state.p2, 
+            lat1: el('lat1').value, lng1: el('lng1').value,
+            lat2: el('lat2').value, lng2: el('lng2').value,
+            area: state.area
+        };
+        const maps = JSON.parse(localStorage.getItem('saved_maps') || '[]');
+        maps.push(config);
+        localStorage.setItem('saved_maps', JSON.stringify(maps));
+        startTracking(config);
+    }
+
+    function loadMapList() {
+        showStep('list');
+        const container = el('map-list-container');
+        container.innerHTML = "";
+        const maps = JSON.parse(localStorage.getItem('saved_maps') || '[]');
+        maps.forEach((m, i) => {
+            const item = document.createElement('div');
+            item.className = 'map-item';
+            item.innerHTML = `<span onclick="loadMap(${i})">📍 ${m.name}</span>
+                              <button class="del-btn" onclick="deleteMap(${i})">削除</button>`;
+            container.appendChild(item);
+        });
+    }
+
+    function loadMap(index) {
+        const maps = JSON.parse(localStorage.getItem('saved_maps') || '[]');
+        const m = maps[index];
+        mapDataUrl = m.img;
+        el('map-img').src = m.img;
+        el('map-img').onload = () => {
+            el('map-img').style.display = 'block';
+            el('lat1').value = m.lat1; el('lng1').value = m.lng1;
+            el('lat2').value = m.lat2; el('lng2').value = m.lng2;
+            state.p1 = m.p1; state.p2 = m.p2; state.area = m.area;
+            startTracking(m);
+        };
+    }
+
+    function deleteMap(i) {
+        let maps = JSON.parse(localStorage.getItem('saved_maps') || '[]');
+        maps.splice(i, 1);
+        localStorage.setItem('saved_maps', JSON.stringify(maps));
+        loadMapList();
+    }
+
+    // --- 実行系 ---
+    function startTracking(m) {
+        showStep(4);
+        const vw = el('viewport').clientWidth, vh = el('viewport').clientHeight;
+        state.scale = Math.min(vw / m.area.w, vh / m.area.h);
+        state.offsetX = -m.area.x * state.scale;
+        state.offsetY = -m.area.y * state.scale;
+        updateTransform();
+        el('rect').style.display = 'none';
+
+        navigator.geolocation.watchPosition(p => {
+            const lat = p.coords.latitude, lon = p.coords.longitude;
+            el('status').innerText = `緯度:${lat.toFixed(5)} 経度:${lon.toFixed(5)}`;
+            const px = m.p1.x + ((lon - m.lng1) / (m.lng2 - m.lng1)) * (m.p2.x - m.p1.x);
+            const py = m.p1.y + ((lat - m.lat1) / (m.lat2 - m.lat1)) * (m.p2.y - m.p1.y);
+            updateD('user-dot', px, py, state.rot);
+        }, null, { enableHighAccuracy: true });
+        if (window.DeviceOrientationEvent) el('gyro').style.display = 'block';
+    }
+
+    function showStep(n) {
+        state.step = n;
+        document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+        el('s' + (n === 'list' ? '-list' : n)).classList.add('active');
+    }
+
+    function updateD(id, x, y, rot = null) {
+        const d = el(id);
+        d.style.left = x + 'px'; d.style.top = y + 'px';
+        if (rot !== null) d.style.transform = `translate(-50%, -50%) rotate(${rot}deg)`;
+        d.style.display = 'block';
+    }
+
+    async function askGyro() {
+        if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+            await DeviceOrientationEvent.requestPermission();
+        }
+        window.addEventListener('deviceorientation', e => {
+            state.rot = e.webkitCompassHeading || 360 - e.alpha;
+            updateD('user-dot', null, null, state.rot);
+        });
+        el('gyro').style.display = 'none';
+    }
+</script>
+</body>
+</html>
