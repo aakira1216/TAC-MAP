@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>Offline Map Tracker</title>
+    <style>
+        :root { --bg: #0f172a; --panel: #1e293b; --accent: #3b82f6; --success: #10b981; }
+        body { margin: 0; background: var(--bg); color: white; font-family: sans-serif; overflow: hidden; height: 100dvh; display: flex; flex-direction: column; }
+        
+        /* ヘッダー */
+        .header { display: flex; gap: 8px; padding: 10px; background: var(--panel); z-index: 1000; border-bottom: 1px solid #334155; }
+        .nav-btn { flex: 1; padding: 12px; border-radius: 8px; border: none; font-size: 12px; font-weight: bold; color: white; background: #475569; }
+
+        /* メイン表示エリア */
+        #viewport { position: relative; flex: 1; overflow: hidden; background: #000; touch-action: none; display: flex; align-items: center; justify-content: center; }
+        #map-container { position: absolute; transform-origin: 0 0; left: 0; top: 0; }
+        #map-img { display: none; }
+        
+        /* マーカー */
+        .dot { position: absolute; width: 24px; height: 24px; border-radius: 50%; border: 2px solid #fff; transform: translate(-50%, -50%); display: none; z-index: 10; }
+        #p1-dot { background: #ef4444; }
+        #p2-dot { background: #22c55e; }
+        #user-dot { width: 0; height: 0; border-left: 12px solid transparent; border-right: 12px solid transparent; border-bottom: 28px solid var(--accent); background: none; border-radius: 0; z-index: 20; }
+        #rect { position: absolute; border: 2px dashed var(--accent); background: rgba(59, 130, 246, 0.2); display: none; }
+
+        /* 操作パネル */
+        #panel { height: 40vh; padding: 15px; background: var(--bg); border-top: 1px solid #334155; overflow-y: auto; }
+        .step { display: none; }
+        .active { display: block; }
+        
+        button.action { width: 100%; padding: 16px; margin: 8px 0; border-radius: 12px; border: none; font-size: 16px; font-weight: bold; cursor: pointer; }
+        .blue { background: var(--accent); color: white; }
+        .green { background: var(--success); color: white; }
+        
+        input { width: 100%; padding: 12px; margin: 5px 0; border-radius: 8px; border: 1px solid #334155; background: var(--panel); color: white; box-sizing: border-box; font-size: 16px; }
+        
+        /* 保存リストのスタイル */
+        .map-item { background: var(--panel); padding: 12px; margin-bottom: 8px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
+        .map-item span { font-weight: bold; }
+        .del-btn { background: #ef4444; padding: 5px 10px; border-radius: 4px; font-size: 11px; border: none; color: white; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <button class="nav-btn" onclick="showStep(1)">新規作成</button>
+    <button class="nav-btn" onclick="loadMapList()">保存済みマップ</button>
+</div>
+
+<div id="viewport">
+    <div id="map-container">
+        <img id="map-img">
+        <div id="p1-dot" class="dot"></div>
+        <div id="p2-dot" class="dot"></div>
+        <div id="user-dot" class="dot"></div>
+        <div id="rect"></div>
+    </div>
+</div>
+
+<div id="panel">
+    <div id="s1" class="step active">
+        <p>【STEP 1】 地図画像を選択</p>
+        <input type="file" id="file-input" accept="image/*">
+    </div>
+
+    <div id="s2" class="step">
+        <p id="guide" style="color:#ef4444;">1. P1(赤)の地点をタップしてください</p>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+            <input type="number" id="lat1" placeholder="P1緯度" step="any">
+            <input type="number" id="lng1" placeholder="P1経度" step="any">
+            <input type="number" id="lat2" placeholder="P2緯度" step="any">
+            <input type="number" id="lng2" placeholder="P2経度" step="any">
+        </div>
+        <button onclick="showStep(3)" class="action blue">次へ（範囲指定）</button>
+    </div>
