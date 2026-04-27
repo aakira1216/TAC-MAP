@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>Advanced Map Tracker v4 - Split Input</title>
+    <style>
+        :root { 
+            --bg: #0f172a; 
+            --panel-bg: rgba(30, 41, 59, 0.9);
+            --accent: #3b82f6; 
+            --success: #10b981; 
+            --text: #f8fafc;
+        }
+        
+        body { 
+            margin: 0; background: #000; color: var(--text); 
+            font-family: sans-serif; overflow: hidden; height: 100dvh; 
+            position: fixed; width: 100%;
+        }
+        
+        #viewport { 
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            overflow: hidden; background: #000; touch-action: none; 
+        }
+        
+        #map-container { 
+            position: absolute; transform-origin: 0 0; will-change: transform;
+        }
+        
+        #map-img { display: none; pointer-events: none; }
+        
+        .dot { 
+            position: absolute; width: 24px; height: 24px; border-radius: 50%; 
+            border: 2px solid #fff; transform: translate(-50%, -50%); 
+            display: none; z-index: 100; pointer-events: none;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+        #p1-dot { background: #ef4444; }
+        #p2-dot { background: #22c55e; }
+        
+        #user-dot { 
+            width: 0; height: 0; border-left: 12px solid transparent; 
+            border-right: 12px solid transparent; border-bottom: 28px solid var(--accent); 
+            z-index: 110; position: absolute; transform: translate(-50%, -70%); display: none;
+            pointer-events: none; filter: drop-shadow(0 0 5px rgba(0,0,0,0.5));
+        }
+        
+        #scale-container {
+            position: fixed; bottom: 80px; right: 20px; z-index: 1005;
+            text-align: center; pointer-events: none;
+        }
+        #scale-bar {
+            height: 4px; border: 2px solid white; border-top: none;
+            width: 0px; transition: width 0.1s; background: rgba(0,0,0,0.3);
+        }
+        #scale-label { font-size: 10px; text-shadow: 1px 1px 2px black; }
+
+        #ui-overlay {
+            position: fixed; top: 20px; right: 15px; display: none; flex-direction: column; gap: 10px; z-index: 1002;
+        }
+        .ui-btn {
+            width: 44px; height: 44px; background: var(--panel-bg); color: white;
+            border-radius: 8px; border: 1px solid rgba(255,255,255,0.2);
+            display: flex; align-items: center; justify-content: center; font-size: 18px;
+        }
+        .active-mode { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 10px var(--accent); }
+
+        #panel { 
+            position: fixed; bottom: 20px; left: 15px; right: 15px;
+            max-height: 40vh; padding: 15px; background: var(--panel-bg); 
+            backdrop-filter: blur(10px); border-radius: 15px;
+            overflow-y: auto; z-index: 1000;
+        }
+        
+        .step { display: none; }
+        .active { display: block; }
+        button { width: 100%; padding: 12px; margin: 10px 0 5px 0; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; }
+        .blue { background: var(--accent); color: white; }
+        .green { background: var(--success); color: white; }
+
+        /* 入力セルのスタイル */
+        .input-group { display: flex; align-items: center; gap: 5px; margin: 8px 0; }
+        .input-label { width: 45px; font-size: 12px; font-weight: bold; color: #cbd5e1; }
+        .input-box { 
+            background: #222; border: 1px solid #444; color: white; 
+            padding: 10px; border-radius: 5px; text-align: center; font-family: monospace;
+        }
+        .box-int { width: 60px; } /* 整数部 */
+        .box-dec { flex-grow: 1; text-align: left; } /* 小数部 */
+        .dot-separator { font-weight: bold; font-size: 20px; color: var(--accent); }
+    </style>
+</head>
+<body>
+
+<div id="ui-overlay">
+    <div id="btn-lock" class="ui-btn active-mode" onclick="toggleTracking()">🎯</div>
+    <div id="btn-rotate" class="ui-btn" onclick="cycleRotateMode()">🧭</div>
+</div>
+
+<div id="scale-container">
+    <div id="scale-label">50m</div>
+    <div id="scale-bar"></div>
+</div>
+
+<div id="viewport">
+    <div id="map-container">
+        <img id="map-img">
+    </div>
+    <div id="p1-dot" class="dot"></div>
+    <div id="p2-dot" class="dot"></div>
+    <div id="user-dot"></div>
+</div>
+
+<div id="panel">
+    <div id="s1" class="step active">
+        <p>STEP 1: 地図画像を選択</p>
+        <input type="file" id="file-input" style="width: 100%;" accept="image/*">
+    </div>
+
+    <div id="s2" class="step">
+        <p id="guide">P1(赤)をタップして「登録」</p>
+        
+        <div id="p1-inputs">
+            <div class="input-group">
+                <span class="input-label">P1緯度</span>
+                <input type="number" id="lat1_int" class="input-box box-int" placeholder="35">
+                <span class="dot-separator">.</span>
+                <input type="number" id="lat1_dec" class="input-box box-dec" placeholder="68123">
+            </div>
+            <div class="input-group">
+                <span class="input-label">P1経度</span>
+                <input type="number" id="lng1_int" class="input-box box-int" placeholder="139">
+                <span class="dot-separator">.</span>
+                <input type="number" id="lng1_dec" class="input-box box-dec" placeholder="76712">
+            </div>
+            <button onclick="confirmP1()" class="blue">P1を登録</button>
+        </div>
+
+        <div id="p2-inputs" style="display:none">
+            <div class="input-group">
+                <span class="input-label">P2緯度</span>
+                <input type="number" id="lat2_int" class="input-box box-int" placeholder="35">
+                <span class="dot-separator">.</span>
+                <input type="number" id="lat2_dec" class="input-box box-dec" placeholder="68123">
+            </div>
+            <div class="input-group">
+                <span class="input-label">P2経度</span>
+                <input type="number" id="lng2_int" class="input-box box-int" placeholder="139">
+                <span class="dot-separator">.</span>
+                <input type="number" id="lng2_dec" class="input-box box-dec" placeholder="76712">
+            </div>
+            <button onclick="confirmP2()" class="green">P2を登録</button>
+        </div>
+    </div>
+
+    <div id="s3" class="step">
+        <p>マップ名を入力して開始</p>
+        <input type="text" id="map-name" placeholder="山歩きルートなど" style="width:100%; padding:10px; background:#222; color:white; border:1px solid #444; border-radius:5px; box-sizing:border-box;">
+        <button onclick="saveAndStart()" class="blue">追跡開始</button>
+    </div>
+
+    <div id="s4" class="step">
+        <div id="status" style="font-size:11px; text-align:center;">GPS信号待機中...</div>
+        <button id="gyro-btn" onclick="askGyro()">方位計を有効化</button>
+        <button onclick="location.reload()" style="background:#555; color:white;">リセット</button>
+    </div>
+</div>
+
+<script>
+    const state = { 
+        step: 1, p1: null, p2: null, 
+        scale: 1, offsetX: 0, offsetY: 0, 
+        isTracking: true, rotateMode: 0, 
+        mapNorth: 0, metersPerPixel: 0,
+        userPos: {x:0, y:0}, userHeading: 0,
+        tempPoint: null
+    };
+    
+    const el = id => document.getElementById(id);
+
+    // 分割された入力を結合して数値にする関数
+    function getCombinedCoord(idPrefix) {
+        const intVal = el(idPrefix + '_int').value || "0";
+        const decVal = el(idPrefix + '_dec').value || "0";
+        return parseFloat(intVal + "." + decVal);
+    }
+
+    el('file-input').onchange = e => {
+        const reader = new FileReader();
+        reader.onload = ev => {
+            el('map-img').src = ev.target.result;
+            el('map-img').onload = () => {
+                el('map-img').style.display = 'block';
+                fitImage();
+                showStep(2);
+            };
+        };
+        reader.readAsDataURL(e.target.files[0]);
+    };
+
+    function fitImage() {
+        const img = el('map-img'), vw = el('viewport').clientWidth, vh = el('viewport').clientHeight;
+        state.scale = Math.min(vw / img.naturalWidth, vh / img.naturalHeight);
+        state.offsetX = (vw - img.naturalWidth * state.scale) / 2;
+        state.offsetY = (vh - img.naturalHeight * state.scale) / 2;
+        updateTransform();
+    }
+
+    let evCache = [], lastDist = 0, dragStartX = 0, dragStartY = 0;
+    const vNode = el('viewport');
+
+    vNode.onpointerdown = e => {
+        evCache.push(e);
+        vNode.setPointerCapture(e.pointerId);
+        if (evCache.length === 1) {
+            dragStartX = e.clientX - state.offsetX;
+            dragStartY = e.clientY - state.offsetY;
+        }
+    };
+
+    vNode.onpointermove = e => {
+        const index = evCache.findIndex(ev => ev.pointerId === e.pointerId);
+        if (index === -1) return;
+        evCache[index] = e;
+
+        if (evCache.length === 2) {
+            const dist = Math.hypot(evCache[0].clientX - evCache[1].clientX, evCache[0].clientY - evCache[1].clientY);
+            const centerX = (evCache[0].clientX + evCache[1].clientX) / 2;
+            const centerY = (evCache[0].clientY + evCache[1].clientY) / 2;
+            if (lastDist > 0) zoomAt(centerX, centerY, dist / lastDist);
+            lastDist = dist;
+            state.isTracking = false; 
+            updateUIControls();
+        } 
+        else if (evCache.length === 1) {
+            state.offsetX = e.clientX - dragStartX;
+            state.offsetY = e.clientY - dragStartY;
+            state.isTracking = false; 
+            updateUIControls();
+            updateTransform();
+        }
+    };
+
+    vNode.onpointerup = vNode.onpointercancel = e => {
+        if (evCache.length === 1) {
+            const currentMoveDist = Math.hypot(e.clientX - (dragStartX + state.offsetX), e.clientY - (dragStartY + state.offsetY));
+            if (currentMoveDist < 10) handleTap(e);
+        }
+        evCache = evCache.filter(ev => ev.pointerId !== e.pointerId);
+        if (evCache.length < 2) {
+            lastDist = 0;
+            if (evCache.length === 1) {
+                dragStartX = evCache[0].clientX - state.offsetX;
+                dragStartY = evCache[0].clientY - state.offsetY;
+            }
+        }
+    };
+
+    function zoomAt(x, y, ratio) {
+        const newScale = state.scale * ratio;
+        if (newScale < 0.05 || newScale > 50) return;
+        state.offsetX = x - (x - state.offsetX) * ratio;
+        state.offsetY = y - (y - state.offsetY) * ratio;
+        state.scale = newScale;
+        updateTransform();
+    }
+
+    function updateTransform() {
+        let mapRotation = 0;
+        if (state.rotateMode === 1) mapRotation = -state.mapNorth; 
+        if (state.rotateMode === 2) mapRotation = -state.mapNorth - state.userHeading; 
+        
+        el('map-container').style.transform = `translate(${state.offsetX}px, ${state.offsetY}px) scale(${state.scale}) rotate(${mapRotation}deg)`;
+        
+        if (state.p1) updateDotPos('p1-dot', state.p1.x, state.p1.y, mapRotation);
+        if (state.p2) updateDotPos('p2-dot', state.p2.x, state.p2.y, mapRotation);
+        updateDotPos('user-dot', state.userPos.x, state.userPos.y, mapRotation);
+        
+        if (state.metersPerPixel > 0) {
+            const barWidth = (50 / state.metersPerPixel) * state.scale;
+            el('scale-bar').style.width = barWidth + 'px';
+        }
+    }
+
+    function updateDotPos(id, imgX, imgY, rotation) {
+        if (imgX === 0 && imgY === 0) return;
+        const rad = rotation * Math.PI / 180;
+        const rx = (imgX * state.scale) * Math.cos(rad) - (imgY * state.scale) * Math.sin(rad);
+        const ry = (imgX * state.scale) * Math.sin(rad) + (imgY * state.scale) * Math.cos(rad);
+        const dot = el(id);
+        dot.style.left = (state.offsetX + rx) + 'px';
+        dot.style.top = (state.offsetY + ry) + 'px';
+        if (id === 'user-dot') {
+            dot.style.transform = `translate(-50%, -70%) rotate(${state.userHeading + (state.rotateMode === 0 ? 0 : -state.mapNorth - (state.rotateMode === 2 ? state.userHeading : 0))}deg)`;
+        }
+    }
+
+    function handleTap(e) {
+        const r = vNode.getBoundingClientRect();
+        const x = (e.clientX - r.left - state.offsetX) / state.scale;
+        const y = (e.clientY - r.top - state.offsetY) / state.scale;
+        if (state.step === 2) {
+            state.tempPoint = {x, y};
+            const dotId = state.p1 ? 'p2-dot' : 'p1-dot';
+            el(dotId).style.display = 'block';
+            updateDotPos(dotId, x, y, 0); 
+        }
+    }
+
+    function confirmP1() {
+        if (!state.tempPoint) return alert("地点を選択してください");
+        state.p1 = {...state.tempPoint, lat: getCombinedCoord('lat1'), lng: getCombinedCoord('lng1')};
+        state.tempPoint = null;
+        el('p1-inputs').style.display = 'none';
+        el('p2-inputs').style.display = 'block';
+        el('guide').innerText = "P2(緑)をタップして「登録」";
+    }
+
+    function confirmP2() {
+        if (!state.tempPoint) return alert("地点を選択してください");
+        state.p2 = {...state.tempPoint, lat: getCombinedCoord('lat2'), lng: getCombinedCoord('lng2')};
+        calculateMapLogic();
+        showStep(3);
+    }
+
+    function calculateMapLogic() {
+        const p1 = state.p1, p2 = state.p2;
+        const R = 6371000;
+        const dLat = (p2.lat - p1.lat) * Math.PI / 180;
+        const dLng = (p2.lng - p1.lng) * Math.PI / 180;
+        const a = Math.sin(dLat/2) ** 2 + Math.cos(p1.lat * Math.PI/180) * Math.cos(p2.lat * Math.PI/180) * Math.sin(dLng/2) ** 2;
+        const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        state.metersPerPixel = dist / Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        state.mapNorth = (Math.atan2(p2.x - p1.x, p1.y - p2.y) * 180 / Math.PI) - (Math.atan2(dLng, dLat) * 180 / Math.PI);
+    }
+
+    function saveAndStart() {
+        el('ui-overlay').style.display = 'flex';
+        showStep(4);
+        navigator.geolocation.watchPosition(p => {
+            const {latitude: lat, longitude: lng} = p.coords;
+            el('status').innerText = `Lat: ${lat.toFixed(5)} Lng: ${lng.toFixed(5)}`;
+            const px = state.p1.x + ((lng - state.p1.lng) / (state.p2.lng - state.p1.lng)) * (state.p2.x - state.p1.x);
+            const py = state.p1.y + ((lat - state.p1.lat) / (state.p2.lat - state.p1.lat)) * (state.p2.y - state.p1.y);
+            state.userPos = {x: px, y: py};
+            el('user-dot').style.display = 'block';
+            if (state.isTracking) centerOn(px, py);
+            else updateTransform();
+        }, null, {enableHighAccuracy: true});
+    }
+
+    function centerOn(x, y) {
+        const vw = vNode.clientWidth, vh = vNode.clientHeight;
+        state.offsetX = vw/2 - (x * state.scale);
+        state.offsetY = vh/2 - (y * state.scale);
+        updateTransform();
+    }
+
+    function cycleRotateMode() {
+        state.rotateMode = (state.rotateMode + 1) % 3;
+        el('btn-rotate').innerText = ['🧭', '⬆️N', '🏃⬆️'][state.rotateMode];
+        el('btn-rotate').classList.toggle('active-mode', state.rotateMode > 0);
+        updateTransform();
+    }
+
+    function toggleTracking() {
+        state.isTracking = !state.isTracking;
+        updateUIControls();
+    }
+
+    function updateUIControls() {
+        el('btn-lock').classList.toggle('active-mode', state.isTracking);
+    }
+
+    function showStep(n) {
+        document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+        el('s' + n).classList.add('active');
+        state.step = n;
+    }
+
+    async function askGyro() {
+        if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+            await DeviceOrientationEvent.requestPermission();
+        }
+        window.addEventListener('deviceorientation', e => {
+            state.userHeading = e.webkitCompassHeading || (360 - e.alpha);
+            updateTransform();
+        });
+        el('gyro-btn').style.display = 'none';
+    }
+</script>
+</body>
+</html>
