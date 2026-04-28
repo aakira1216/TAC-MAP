@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>Map Tracker Pro v10.0 - HUD Edition</title>
+    <style>
+        :root { --bg: #0f172a; --panel-bg: rgba(30, 41, 59, 0.95); --accent: #3b82f6; --success: #10b981; --danger: #ef4444; --text: #f8fafc; }
+        body { margin: 0; background: #000; color: var(--text); font-family: -apple-system, sans-serif; overflow: hidden; height: 100dvh; width: 100%; position: fixed; }
+        #viewport { position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden; touch-action: none; }
+        #map-container { position: absolute; top: 0; left: 0; style="will-change: transform; transform-origin: 0 0;" }
+        #map-img { display: none; pointer-events: none; }
+        
+        /* 地点マーカー */
+        .dot { position: absolute; width: 20px; height: 20px; border-radius: 50%; border: 2px solid #fff; transform: translate(-50%, -50%); display: none; z-index: 100; pointer-events: none; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
+        #p1-dot { background: var(--danger); }
+        #p2-dot { background: var(--success); }
+        
+        /* 現在位置アイコンとHUD */
+        #user-container { position: absolute; pointer-events: none; display: none; z-index: 110; transform-origin: center center; }
+        #user-dot { width: 0; height: 0; border-left: 10px solid transparent; border-right: 10px solid transparent; border-bottom: 24px solid var(--accent); position: absolute; top: 50%; left: 50%; transform: translate(-50%, -70%); z-index: 2; }
+        #hud-visual { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1; }
+
+        #scale-container { position: absolute; left: 20px; pointer-events: none; z-index: 999; display: none; }
+        #scale-bar { width: 100px; height: 5px; border: 2px solid #fff; border-top: none; }
+        #scale-label { font-size: 11px; text-shadow: 0 0 4px #000; margin-bottom: 2px; font-weight: bold; text-align: center; }
+        
+        #ui-overlay { position: fixed; top: 44px; right: 15px; display: none; flex-direction: column; gap: 12px; z-index: 1002; }
+        .ui-btn { width: 50px; height: 50px; background: var(--panel-bg); color: white; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; font-size: 24px; }
+        .active-mode { border-color: var(--accent); color: var(--accent); background: rgba(59, 130, 246, 0.2); }
+        
+        #panel { position: fixed; bottom: 20px; left: 15px; right: 15px; padding: 15px; background: var(--panel-bg); backdrop-filter: blur(15px); border-radius: 20px; z-index: 1000; border: 1px solid rgba(255,255,255,0.1); }
+        
+        /* 構成の変更: GPS情報の行 */
+        .status-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        #status { font-size: 12px; font-weight: bold; color: var(--text); flex: 1; }
+        .mini-btn { padding: 10px; border-radius: 10px; font-size: 13px; border: none; font-weight: bold; flex: 0.7; }
+        .btn-hud-toggle { background: #334155; color: white; }
+
+        .step { display: none; } .active { display: block; }
+        button { width: 100%; padding: 14px; margin: 5px 0; border-radius: 12px; border: none; font-weight: bold; font-size: 16px; }
+        .blue { background: var(--accent); color: white; } .green { background: var(--success); color: white; } .outline { background: transparent; border: 1px solid #444; color: white; }
+        input, select { width: 100%; padding: 12px; margin: 5px 0; border-radius: 8px; border: 1px solid #444; background: #1a1a1a; color: white; box-sizing: border-box; font-size: 16px; }
+        .coord-row { display: flex; align-items: center; gap: 4px; } .int-part { width: 70px; text-align: center; }
+        
+        /* HUD設定画面 */
+        #hud-config-panel { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 280px; background: var(--panel-bg); padding: 20px; border-radius: 20px; border: 1px solid var(--accent); z-index: 2000; box-shadow: 0 0 30px rgba(0,0,0,0.8); }
+        .config-row { display: flex; align-items: center; justify-content: space-between; margin: 15px 0; }
+        .config-row select { width: 80px; margin: 0 5px; }
+    </style>
+</head>
+<body>
+
+<div id="hud-config-panel">
+    <h3 style="margin:0 0 15px 0; text-align:center; color:var(--accent);">HUD設定</h3>
+    <div class="config-row">
+        <span>HUD表示</span>
+        <input type="checkbox" id="hud-enable" style="width:30px; height:30px;" onchange="updateHudSettings()">
+    </div>
+    <div class="config-row">
+        <span>サークル半径</span>
+        <div style="display:flex; align-items:center;">
+            <select id="hud-radius-select" onchange="updateHudSettings()"></select>
+            <span>m</span>
+        </div>
+    </div>
+    <button class="blue" onclick="toggleHudConfig()" style="margin-top:10px">閉じる</button>
+</div>
+
+<div id="ui-overlay">
+    <div id="btn-lock" class="ui-btn active-mode" onclick="toggleTracking()">🎯</div>
+    <div id="btn-rotate" class="ui-btn" onclick="cycleRotateMode()">🧭</div>
+</div>
+
+<div id="viewport">
+    <div id="map-container"><img id="map-img"></div>
+    <div id="p1-dot" class="dot"></div>
+    <div id="p2-dot" class="dot"></div>
+    
+    <div id="user-container">
+        <svg id="hud-visual" width="1000" height="1000" viewBox="0 0 1000 1000">
+            <circle cx="500" cy="500" r="100" fill="rgba(59, 130, 246, 0.1)" stroke="rgba(59, 130, 246, 0.4)" stroke-width="2" id="hud-circle" />
+            <path id="hud-wedge" fill="rgba(59, 130, 246, 0.2)" stroke="rgba(59, 130, 246, 0.5)" stroke-width="2" />
+        </svg>
+        <div id="user-dot"></div>
+    </div>
+    
+    <div id="scale-container"><div id="scale-label">50m</div><div id="scale-bar"></div></div>
+</div>
+
+<div id="panel">
+    <div id="s0" class="step active">
+        <h3 style="margin:0 0 10px 0; color:var(--accent)">Map Tracker Pro</h3>
+        <button class="blue" onclick="startNewMap()">＋ 新規マップ</button>
+        <button class="outline" onclick="showMapList()">📂 保存した地図</button>
+    </div>
+    <div id="s1" class="step">
+        <p>画像を選択</p><input type="file" id="file-input" accept="image/*">
+        <button class="outline" onclick="showStep(0)">戻る</button>
+    </div>
+    <div id="s-list" class="step"><h3>保存済み</h3><div id="map-list-container"></div><button class="outline" onclick="showStep(0)">戻る</button></div>
+    <div id="s2" class="step">
+        <p id="guide" style="margin:0 0 10px 0; font-weight:bold;">地点1(赤)をタップして座標入力</p>
+        <div id="p1-inputs">
+            <div class="coord-row"><input type="text" id="lat1_int" class="int-part" placeholder="35">. <input type="text" id="lat1_dec" style="flex:1" placeholder="00000"></div>
+            <div class="coord-row"><input type="text" id="lng1_int" class="int-part" placeholder="135">. <input type="text" id="lng1_dec" style="flex:1" placeholder="00000"></div>
+            <button onclick="confirmP1()" class="blue">P1登録</button>
+        </div>
+        <div id="p2-inputs" style="display:none">
+            <div class="coord-row"><input type="text" id="lat2_int" class="int-part" placeholder="35">. <input type="text" id="lat2_dec" style="flex:1" placeholder="00000"></div>
+            <div class="coord-row"><input type="text" id="lng2_int" class="int-part" placeholder="135">. <input type="text" id="lng2_dec" style="flex:1" placeholder="00000"></div>
+            <button onclick="confirmP2()" class="green">P2登録</button>
+        </div>
+    </div>
+    <div id="s3" class="step"><button onclick="saveAndStart()" class="blue">追跡開始</button></div>
+    <div id="s4" class="step">
+        <div class="status-row">
+            <div id="status">GPS待機中...</div>
+            <button onclick="toggleHudConfig()" class="btn-hud-toggle mini-btn">HUD設定</button>
+            <button onclick="location.reload()" class="outline mini-btn">終了</button>
+        </div>
+        <div id="save-prompt" style="display:none; margin-top:10px; border-top:1px solid #444; padding-top:10px">
+            <input type="text" id="map-name-input" placeholder="マップ名" style="margin-bottom:5px">
+            <button class="blue" onclick="executeSave()" style="padding:10px">この地図を保存</button>
+        </div>
+        <button id="gyro-btn" onclick="askGyro()" class="outline" style="margin-top:10px; padding:10px; font-size:14px">🧭 方位計を許可</button>
+    </div>
+</div>
+
+<script>
+    const DB_NAME = "MapTrackerDB", STORE_NAME = "maps";
+    let db, pointers = [], lastDist = 0, lastPoint = null;
+    let locationHistory = []; 
+
+    const state = { 
+        step: 0, p1: null, p2: null, scale: 1, x: 0, y: 0, 
+        isTracking: true, rotateMode: 0, mapNorth: 0, metersPerPixel: 0,
+        userPos: {x:0, y:0}, userHeading: 0, userAcc: 0, tempPoint: null, ticking: false,
+        isNewMap: false, hasSaved: false, currentImgBlob: null,
+        hudOn: false, hudRadius: 20
+    };
+
+    const initDB = () => new Promise(r => {
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = e => e.target.result.createObjectStore(STORE_NAME, { keyPath: "id", autoIncrement: true });
+        req.onsuccess = e => { db = e.target.result; r(); };
+    });
+
+    const el = id => document.getElementById(id), vNode = el('viewport'), container = el('map-container');
+    
+    // HUDプルダウン生成
+    const radiusSelect = el('hud-radius-select');
+    for(let r=5; r<=50; r+=5){ const opt=document.createElement('option'); opt.value=r; opt.textContent=r; if(r===20)opt.selected=true; radiusSelect.appendChild(opt); }
+
+    window.onload = async () => { await initDB(); };
+
+    function startNewMap() { state.isNewMap = true; showStep(2); el('file-input').click(); }
+    async function showMapList() {
+        showStep('-list'); const listEl = el('map-list-container'); listEl.innerHTML = "読込中...";
+        const tx = db.transaction(STORE_NAME, "readonly");
+        const maps = await new Promise(r => { tx.objectStore(STORE_NAME).getAll().onsuccess = e => r(e.target.result); });
+        listEl.innerHTML = maps.length ? "" : "保存なし";
+        maps.forEach(m => {
+            const div = document.createElement('div'); div.className = 'map-item';
+            div.innerHTML = `<span style="flex:1; font-size:14px; font-weight:bold">${m.name}</span><button class="blue" style="width:50px;padding:8px;margin:0;font-size:12px" onclick="loadSavedMapById(${m.id})">開く</button><button class="outline" style="width:40px;padding:8px;margin:0 0 0 5px;color:var(--danger);font-size:12px" onclick="deleteMap(${m.id})">🗑</button>`;
+            listEl.appendChild(div);
+        });
+    }
+    async function loadSavedMapById(id) {
+        const tx = db.transaction(STORE_NAME, "readonly");
+        const data = await new Promise(r => { tx.objectStore(STORE_NAME).get(id).onsuccess = e => r(e.target.result); });
+        if(data) {
+            state.isNewMap = false; state.p1 = data.p1; state.p2 = data.p2; state.mapNorth = data.mapNorth; state.metersPerPixel = data.metersPerPixel;
+            const img = el('map-img'); img.src = URL.createObjectURL(data.image);
+            img.onload = () => { img.style.display = 'block'; fitImage(); saveAndStart(); };
+        }
+    }
+    el('file-input').onchange = e => {
+        const file = e.target.files[0]; if (!file) return;
+        state.currentImgBlob = file; const img = el('map-img'); img.src = URL.createObjectURL(file);
+        img.onload = () => { img.style.display = 'block'; fitImage(); showStep(2); };
+    };
+
+    function fitImage() {
+        const img = el('map-img'), vw = vNode.clientWidth, vh = vNode.clientHeight;
+        state.scale = Math.min(vw/img.naturalWidth, vh/img.naturalHeight)*0.9;
+        state.x = vw/2 - (img.naturalWidth/2*state.scale); state.y = vh/2 - (img.naturalHeight/2*state.scale);
+        state.isTracking = false; requestRender();
+    }
+
+    vNode.onpointerdown = e => { pointers.push(e); vNode.setPointerCapture(e.pointerId); if(pointers.length===1) lastPoint={x:e.clientX, y:e.clientY}; else if(pointers.length===2) { lastDist=Math.hypot(pointers[0].clientX-pointers[1].clientX, pointers[0].clientY-pointers[1].clientY); lastPoint={x:(pointers[0].clientX+pointers[1].clientX)/2, y:(pointers[0].clientY+pointers[1].clientY)/2}; } };
+    vNode.onpointermove = e => {
+        const idx = pointers.findIndex(p => p.pointerId === e.pointerId); if(idx===-1) return; pointers[idx]=e;
+        if(pointers.length===1){ state.x+=e.clientX-lastPoint.x; state.y+=e.clientY-lastPoint.y; lastPoint={x:e.clientX, y:e.clientY}; state.isTracking=false; }
+        else if(pointers.length===2){
+            const midX=(pointers[0].clientX+pointers[1].clientX)/2, midY=(pointers[0].clientY+pointers[1].clientY)/2, dist=Math.hypot(pointers[0].clientX-pointers[1].clientX, pointers[0].clientY-pointers[1].clientY);
+            const zoom=dist/lastDist, rot = (state.rotateMode===1)?-state.mapNorth:(state.rotateMode===2)?-state.mapNorth-state.userHeading:0, rad=rot*Math.PI/180;
+            const dx=midX-state.x, dy=midY-state.y, mx=(dx*Math.cos(-rad)-dy*Math.sin(-rad))/state.scale, my=(dx*Math.sin(-rad)+dy*Math.cos(-rad))/state.scale;
+            state.scale*=zoom; state.x=midX-(mx*state.scale*Math.cos(rad)-my*state.scale*Math.sin(rad)); state.y=midY-(mx*state.scale*Math.sin(rad)+my*state.scale*Math.cos(rad));
+            lastDist=dist; lastPoint={x:midX, y:midY}; state.isTracking=false;
+        }
+        requestRender();
+    };
+    vNode.onpointerup = e => { if(pointers.length===1 && state.step===2) handleTap(e); pointers = pointers.filter(p => p.pointerId !== e.pointerId); };
+    vNode.onpointercancel = e => { pointers = pointers.filter(p => p.pointerId !== e.pointerId); };
+    window.addEventListener('visibilitychange', () => { if (document.hidden) pointers = []; });
+    window.addEventListener('resize', requestRender);
+
+    function handleTap(e) { const rot=(state.rotateMode===1)?-state.mapNorth:(state.rotateMode===2)?-state.mapNorth-state.userHeading:0, rad=-rot*Math.PI/180, dx=e.clientX-state.x, dy=e.clientY-state.y; state.tempPoint={x:(dx*Math.cos(rad)-dy*Math.sin(rad))/state.scale, y:(dx*Math.sin(rad)+dy*Math.cos(rad))/state.scale}; requestRender(); }
+
+    function requestRender() { if(!state.ticking) { window.requestAnimationFrame(()=>{render(); state.ticking=false;}); state.ticking=true; } }
+    
+    function render() {
+        const vw=vNode.clientWidth, vh=vNode.clientHeight, rot=(state.rotateMode===1)?-state.mapNorth:(state.rotateMode===2)?-state.mapNorth-state.userHeading:0, rad=rot*Math.PI/180;
+        if(state.isTracking && state.userPos.x){ const sx=vw/2, sy=(state.rotateMode===2)?vh*0.7:vh/2, mx=state.userPos.x, my=state.userPos.y; state.x=sx-(mx*state.scale*Math.cos(rad)-my*state.scale*Math.sin(rad)); state.y=sy-(mx*state.scale*Math.sin(rad)+my*state.scale*Math.cos(rad)); }
+        container.style.transform = `translate(${state.x}px, ${state.y}px) rotate(${rot}deg) scale(${state.scale})`;
+        
+        const upd = (id, pt) => { const d=el(id); if(pt){ const dx=pt.x*state.scale, dy=pt.y*state.scale, sx=state.x+(dx*Math.cos(rad)-dy*Math.sin(rad)), sy=state.y+(dx*Math.sin(rad)+dy*Math.cos(rad)); d.style.left=sx+'px'; d.style.top=sy+'px'; d.style.display='block'; }else d.style.display='none'; };
+        upd('p1-dot', state.p1||(state.step===2&&!state.p1?state.tempPoint:null)); upd('p2-dot', state.p2||(state.step===2&&state.p1?state.tempPoint:null));
+        
+        // 現在位置とHUDの更新
+        const uContainer = el('user-container');
+        if(state.userPos.x){
+            const dx=state.userPos.x*state.scale, dy=state.userPos.y*state.scale, sx=state.x+(dx*Math.cos(rad)-dy*Math.sin(rad)), sy=state.y+(dx*Math.sin(rad)+dy*Math.cos(rad));
+            uContainer.style.left=sx+'px'; uContainer.style.top=sy+'px'; uContainer.style.display='block';
+            uContainer.style.transform=`translate(-50%, -50%) rotate(${state.userHeading+state.mapNorth+rot}deg)`;
+            
+            // HUDビジュアル更新
+            const hudVis = el('hud-visual');
+            if(state.hudOn && state.metersPerPixel > 0){
+                hudVis.style.display = 'block';
+                const pxRadius = (state.hudRadius / state.metersPerPixel) * state.scale;
+                el('hud-circle').setAttribute('r', pxRadius);
+                // 120度の扇形パス作成
+                const startAngle = -60 * Math.PI / 180, endAngle = 60 * Math.PI / 180;
+                const x1 = 500 + pxRadius * Math.sin(startAngle), y1 = 500 - pxRadius * Math.cos(startAngle);
+                const x2 = 500 + pxRadius * Math.sin(endAngle), y2 = 500 - pxRadius * Math.cos(endAngle);
+                el('hud-wedge').setAttribute('d', `M 500 500 L ${x1} ${y1} A ${pxRadius} ${pxRadius} 0 0 1 ${x2} ${y2} Z`);
+            } else {
+                hudVis.style.display = 'none';
+            }
+        } else { uContainer.style.display='none'; }
+        
+        if(state.metersPerPixel > 0){ 
+            el('scale-container').style.display='block'; 
+            el('scale-container').style.bottom=(el('panel').offsetHeight + 35)+'px'; 
+            el('scale-bar').style.width=((50/state.metersPerPixel)*state.scale)+'px'; 
+        }
+        if(state.step===4) el('status').innerHTML=`精度: &plusmn;${Math.round(state.userAcc)}m`;
+        el('btn-lock').classList.toggle('active-mode', state.isTracking);
+    }
+
+    function parseToDecimal(intStr, decStr) {
+        const combined = (intStr + " " + decStr).replace(/[^0-9.\-\s]/g, ' ').trim();
+        const parts = combined.split(/\s+/).filter(p => p !== "");
+        if (parts.length === 0) return NaN;
+        if (parts.length === 2 && !intStr.trim().includes(" ") && !decStr.trim().includes(" ")) return parseFloat(intStr.trim() + "." + decStr.trim());
+        if (parts.length === 1) return parseFloat(parts[0]);
+        let deg = parseFloat(parts[0])||0, min = parseFloat(parts[1])||0, sec = parseFloat(parts[2])||0, sign = deg<0?-1:1;
+        return (Math.abs(deg) + (min/60) + (sec/3600)) * sign;
+    }
+
+    function confirmP1() { 
+        const lat=parseToDecimal(el('lat1_int').value, el('lat1_dec').value), lng=parseToDecimal(el('lng1_int').value, el('lng1_dec').value);
+        if(!state.tempPoint || isNaN(lat) || isNaN(lng)) return; 
+        state.p1 = {...state.tempPoint, lat, lng}; state.tempPoint=null; el('p1-inputs').style.display='none'; el('p2-inputs').style.display='block'; el('guide').innerText="地点2(緑)をタップして座標入力"; requestRender(); 
+    }
+
+    function confirmP2() { 
+        const lat=parseToDecimal(el('lat2_int').value, el('lat2_dec').value), lng=parseToDecimal(el('lng2_int').value, el('lng2_dec').value);
+        if(!state.tempPoint || isNaN(lat) || isNaN(lng)) return; 
+        state.p2 = {...state.tempPoint, lat, lng}; const p1=state.p1, p2=state.p2, r=Math.PI/180; 
+        const dM = 6371000 * Math.acos(Math.sin(p1.lat*r)*Math.sin(p2.lat*r)+Math.cos(p1.lat*r)*Math.cos(p2.lat*r)*Math.cos((p2.lng-p1.lng)*r)); 
+        state.metersPerPixel = dM / Math.hypot(p2.x-p1.x, p2.y-p1.y); 
+        state.mapNorth = (Math.atan2(p2.x-p1.x, p1.y-p2.y)*180/Math.PI) - (Math.atan2(p2.lng-p1.lng, p2.lat-p1.lat)*180/Math.PI); 
+        showStep(3); 
+    }
+    
+    function saveAndStart() { 
+        showStep(4); el('ui-overlay').style.display='flex'; 
+        navigator.geolocation.watchPosition(p => { 
+            if (p.coords.accuracy > 35) return;
+            state.userAcc = p.coords.accuracy;
+            locationHistory.push({ lat: p.coords.latitude, lng: p.coords.longitude });
+            if (locationHistory.length > 3) locationHistory.shift();
+            const avgLat = locationHistory.reduce((s, c) => s+c.lat, 0)/locationHistory.length, avgLng = locationHistory.reduce((s, c) => s+c.lng, 0)/locationHistory.length;
+            const rX = (avgLng - state.p1.lng) / (state.p2.lng - state.p1.lng), rY = (avgLat - state.p1.lat) / (state.p2.lat - state.p1.lat);
+            state.userPos = { x: state.p1.x + rX * (state.p2.x - state.p1.x), y: state.p1.y + rY * (state.p2.y - state.p1.y) }; 
+            if (state.isNewMap && !state.hasSaved) el('save-prompt').style.display = 'block'; 
+            requestRender(); 
+        }, e => console.error(e), { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }); 
+    }
+
+    function toggleTracking(){ state.isTracking=!state.isTracking; requestRender(); }
+    function cycleRotateMode(){ state.rotateMode=(state.rotateMode+1)%3; el('btn-rotate').innerText=['🧭','⬆️N','🏃⬆️'][state.rotateMode]; requestRender(); }
+    function showStep(n){ document.querySelectorAll('.step').forEach(s=>s.classList.remove('active')); if(el('s'+n)) el('s'+n).classList.add('active'); state.step=n; }
+    async function executeSave(){ const tx=db.transaction(STORE_NAME,"readwrite"); tx.objectStore(STORE_NAME).add({name:el('map-name-input').value||"無題",p1:state.p1,p2:state.p2,mapNorth:state.mapNorth,metersPerPixel:state.metersPerPixel,image:state.currentImgBlob}); tx.oncomplete=()=>{el('save-prompt').style.display='none'; state.hasSaved=true; alert("保存完了");}; }
+    async function askGyro(){ if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function'){if(await DeviceOrientationEvent.requestPermission()!=='granted')return;} window.addEventListener('deviceorientation', e=>{state.userHeading=e.webkitCompassHeading||(360-e.alpha); if(state.rotateMode===2||state.hudOn)requestRender();}, true); el('gyro-btn').style.display='none'; }
+    async function deleteMap(id){ if(confirm("削除しますか？")){ const tx=db.transaction(STORE_NAME,"readwrite"); tx.objectStore(STORE_NAME).delete(id); tx.oncomplete=()=>showMapList(); } }
+
+    // HUD設定の開閉と更新
+    function toggleHudConfig() { const p=el('hud-config-panel'); p.style.display = (p.style.display==='block')?'none':'block'; }
+    function updateHudSettings() {
+        state.hudOn = el('hud-enable').checked;
+        state.hudRadius = parseInt(el('hud-radius-select').value);
+        requestRender();
+    }
+</script>
+</body>
+</html>
