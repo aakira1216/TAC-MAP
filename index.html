@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>オフラインマップ v11.6</title>
+    <style>
+        :root { --primary-btn: #007AFF; --delete-btn: #FF3B30; --bg-gray: #f4f4f9; }
+        body { margin: 0; font-family: -apple-system, sans-serif; overflow: hidden; background: var(--bg-gray); }
+        
+        /* UIレイアウト */
+        #ui-container { position: absolute; top: 0; left: 0; width: 100%; z-index: 10; pointer-events: none; }
+        .panel { 
+            background: rgba(255, 255, 255, 0.9); margin: 8px; padding: 10px; 
+            border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); pointer-events: auto;
+        }
+
+        /* 座標入力：ピリオド分割スタイル */
+        .coord-row { display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 8px; }
+        .coord-input { 
+            width: 60px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; 
+            text-align: center; font-size: 16px; font-variant-numeric: tabular-nums;
+        }
+        .coord-input.long { width: 90px; }
+        .dot { font-weight: bold; font-size: 20px; }
+
+        /* ボタン類 */
+        .btn { 
+            background: var(--primary-btn); color: white; border: none; padding: 10px 16px; 
+            border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer;
+        }
+        .btn-red { background: var(--delete-btn); }
+        .btn:active { opacity: 0.7; }
+
+        /* マップ表示 */
+        #map-canvas { cursor: crosshair; touch-action: none; background: #ddd; }
+
+        /* 下部ステータス */
+        #status-bar { 
+            position: absolute; bottom: 0; width: 100%; padding: 4px 10px;
+            background: rgba(255,255,255,0.8); font-size: 12px; pointer-events: none;
+            display: flex; justify-content: space-between; box-sizing: border-box;
+        }
+
+        /* 保存リストのモーダル風 */
+        #map-list-modal { 
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 85%; max-height: 70%; background: white; border-radius: 16px;
+            padding: 20px; overflow-y: auto; display: none; z-index: 100;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        .map-item { 
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px; border-bottom: 1px solid #eee;
+        }
+        .overlay { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.5); display: none; z-index: 90;
+        }
+    </style>
+</head>
+<body>
+
+<div id="ui-container">
+    <div id="setup-panel" class="panel">
+        <div id="setup-guide" style="font-size: 13px; margin-bottom: 8px; font-weight: bold; color: #333;">
+            手順1: 地図画像を読み込んでください
+        </div>
+        <input type="file" id="file-input" accept="image/*" style="display:none">
+        <button class="btn" onclick="document.getElementById('file-input').click()">画像を選択</button>
+        
+        <div id="coord-entry" style="display:none; margin-top:10px;">
+            <div class="coord-row">
+                <input type="number" id="lat-deg" class="coord-input" placeholder="35">
+                <span class="dot">.</span>
+                <input type="number" id="lat-dec" class="coord-input long" placeholder="00000">
+            </div>
+            <div class="coord-row">
+                <input type="number" id="lng-deg" class="coord-input" placeholder="139">
+                <span class="dot">.</span>
+                <input type="number" id="lng-dec" class="coord-input long" placeholder="00000">
+            </div>
+            <button class="btn" onclick="registerPoint()" id="reg-btn">地点1を登録</button>
+        </div>
+    </div>
+
+    <div id="main-panel" class="panel" style="display:none; display: flex; gap: 8px;">
+        <button class="btn" onclick="toggleGPS()" id="gps-btn">GPS: OFF</button>
+        <button class="btn" onclick="showMapList()">地図を開く</button>
+        <button class="btn" onclick="saveMap()">保存</button>
+    </div>
+</div>
+
+<div id="status-bar">
+    <div id="gps-info">GPS信号なし</div>
+    <div id="scale-info">Scale: --</div>
+    <div style="color: #999;">v11.6</div>
+</div>
+
+<canvas id="map-canvas"></canvas>
+
+<div id="overlay" class="overlay" onclick="closeMapList()"></div>
+<div id="map-list-modal">
+    <h3 style="margin-top:0">保存した地図</h3>
+    <div id="map-items-container"></div>
+    <button class="btn" style="width:100%; margin-top:10px; background:#888;" onclick="closeMapList()">閉じる</button>
+</div>
+
+<script>
+    let db;
+    const canvas = document.getElementById('map-canvas');
+    const ctx = canvas.getContext('2d');
+    
+    let mapImg = null;
+    let points = []; // 地点登録用
+    let currentMapData = null;
+
+    // 表示制御用
+    let scale = 1, offsetX = 0, offsetY = 0;
+    let touchStartX = 0, touchStartY = 0;
+    let isDragging = false;
+    let lastDist = 0;
+    let isGPSTracking = false;
+    let userMoving = false; // ユーザーが操作中はGPS追従を止める
+
+    // DB初期化
+    const request = indexedDB.open("OfflineMapDB", 3);
+    request.onupgradeneeded = e => {
+        db = e.target.result;
+        if (!db.objectStoreNames.contains("maps")) db.createObjectStore("maps", { keyPath: "name" });
+    };
+    request.onsuccess = e => db = e.target.result;
+
+    // --- 地図読み込み ---
+    document.getElementById('file-input').onchange = e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = event => {
+            mapImg = new Image();
+            mapImg.onload = () => {
+                resetView();
+                document.getElementById('coord-entry').style.display = 'block';
+                document.getElementById('setup-guide').innerText = "手順2: 地図上の1点目をタップしてください";
+                draw();
+            };
+            mapImg.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+    };
+
+    function resetView() {
+        scale = Math.min(window.innerWidth / mapImg.width, window.innerHeight / mapImg.height);
+        offsetX = (window.innerWidth - mapImg.width * scale) / 2;
+        offsetY = (window.innerHeight - mapImg.height * scale) / 2;
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+
+    // --- タップ・ドラッグ・ズームの核心部 (v11.6 修正版) ---
+    let tapTimeout = null;
+    let moveThreshold = 5; // 5px以上動いたらドラッグとみなす
+    let startX, startY;
+
+    canvas.addEventListener('touchstart', e => {
+        userMoving = true;
+        if (e.touches.length === 1) {
+            touchStartX = e.touches[0].clientX - offsetX;
+            touchStartY = e.touches[0].clientY - offsetY;
+            startX = e.touches[0].clientX;
+            startY = e.touches[0].clientY;
+            isDragging = true;
+        } else if (e.touches.length === 2) {
+            lastDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        }
+    }, {passive: false});
+
+    canvas.addEventListener('touchmove', e => {
+        e.preventDefault();
+        if (e.touches.length === 1 && isDragging) {
+            offsetX = e.touches[0].clientX - touchStartX;
+            offsetY = e.touches[0].clientY - touchStartY;
+        } else if (e.touches.length === 2) {
+            const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+            const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+            
+            const zoom = dist / lastDist;
+            const newScale = scale * zoom;
+            
+            // 指の間を中心にズーム
+            offsetX = midX - (midX - offsetX) * (newScale / scale);
+            offsetY = midY - (midY - offsetY) * (newScale / scale);
+            scale = newScale;
+            lastDist = dist;
+        }
+        draw();
+    }, {passive: false});
+
+    canvas.addEventListener('touchend', e => {
+        // タップ判定: 動きが小さければクリックとして処理
+        if (isDragging && e.changedTouches.length === 1) {
+            const endX = e.changedTouches[0].clientX;
+            const endY = e.changedTouches[0].clientY;
+            const dist = Math.hypot(endX - startX, endY - startY);
+            
+            if (dist < moveThreshold) {
+                handleMapTap(endX, endY);
+            }
+        }
+        isDragging = false;
+        lastDist = 0;
+        // しばらく操作がなければGPS追従再開の余地を残す（今回は手動ロック優先）
+    });
+
+    function handleMapTap(screenX, screenY) {
+        // スクリーン座標から画像上のピクセル座標へ変換
+        const imgX = (screenX - offsetX) / scale;
+        const imgY = (screenY - offsetY) / scale;
+
+        if (points.length < 2) {
+            points.push({ x: imgX, y: imgY });
+            document.getElementById('setup-guide').innerText = 
+                points.length === 1 ? "手順3: 1点目の緯度経度を入力し、2点目をタップ" : "手順4: 2点目の緯度経度を入力してください";
+            document.getElementById('reg-btn').innerText = `地点${points.length}を登録`;
+            draw();
+        }
+    }
+
+    // --- 座標登録と計算 ---
+    function registerPoint() {
+        const d = parseFloat(document.getElementById('lat-deg').value);
+        const dec = parseFloat("0." + document.getElementById('lat-dec').value);
+        const lat = d + dec;
+
+        const ld = parseFloat(document.getElementById('lng-deg').value);
+        const ldec = parseFloat("0." + document.getElementById('lng-dec').value);
+        const lng = ld + ldec;
+
+        if (isNaN(lat) || isNaN(lng)) { alert("数値を入力してください"); return; }
+
+        points[points.length - 1].lat = lat;
+        points[points.length - 1].lng = lng;
+
+        if (points.length === 2) {
+            completeSetup();
+        } else {
+            // 入力欄をクリア（次の入力のため）
+            document.querySelectorAll('.coord-input').forEach(i => i.value = "");
+            alert("1点目登録完了。続けて2点目をタップ・入力してください。");
+        }
+    }
+
+    function completeSetup() {
+        document.getElementById('setup-panel').style.display = 'none';
+        document.getElementById('main-panel').style.display = 'flex';
+        alert("地図のセットアップが完了しました！");
+        draw();
+    }
+
+    // --- 描画 ---
+    function draw() {
+        if (!mapImg) return;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(mapImg, offsetX, offsetY, mapImg.width * scale, mapImg.height * scale);
+
+        // 登録用ポイントの描画
+        points.forEach((p, i) => {
+            ctx.fillStyle = p.lat ? 'blue' : 'red';
+            ctx.beginPath();
+            ctx.arc(p.x * scale + offsetX, p.y * scale + offsetY, 8, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillText(i+1, p.x * scale + offsetX + 10, p.y * scale + offsetY - 10);
+        });
+
+        // GPS現在地の描画
+        if (isGPSTracking && lastLat && points.length === 2) {
+            const pos = latLngToPixel(lastLat, lastLng);
+            ctx.fillStyle = '#007AFF';
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(pos.x * scale + offsetX, pos.y * scale + offsetY, 10, 0, Math.PI*2);
+            ctx.fill();
+            ctx.stroke();
+        }
+        updateStatus();
+    }
+
+    function latLngToPixel(lat, lng) {
+        const p1 = points[0], p2 = points[1];
+        const x = p1.x + (lng - p1.lng) * (p2.x - p1.x) / (p2.lng - p1.lng);
+        const y = p1.y + (lat - p1.lat) * (p2.y - p1.y) / (p2.lat - p1.lat);
+        return { x, y };
+    }
+
+    function updateStatus() {
+        document.getElementById('scale-info').innerText = `Scale: ${scale.toFixed(2)}`;
+    }
+
+    // --- GPS機能 ---
+    let lastLat, lastLng;
+    function toggleGPS() {
+        isGPSTracking = !isGPSTracking;
+        document.getElementById('gps-btn').innerText = isGPSTracking ? "GPS: ON" : "GPS: OFF";
+        if (isGPSTracking) {
+            navigator.geolocation.watchPosition(pos => {
+                lastLat = pos.coords.latitude;
+                lastLng = pos.coords.longitude;
+                document.getElementById('gps-info').innerText = `Lat: ${lastLat.toFixed(4)} Lng: ${lastLng.toFixed(4)}`;
+                if (!userMoving) centerOnGPS();
+                draw();
+            }, err => console.error(err), { enableHighAccuracy: true });
+        }
+    }
+
+    function centerOnGPS() {
+        if (!lastLat || points.length < 2) return;
+        const pos = latLngToPixel(lastLat, lastLng);
+        offsetX = canvas.width / 2 - pos.x * scale;
+        offsetY = canvas.height / 2 - pos.y * scale;
+    }
+
+    // --- 保存・読み込み (v11.5 削除機能付き) ---
+    function saveMap() {
+        const name = prompt("地図の名前を入力してください");
+        if (!name) return;
+        const tx = db.transaction("maps", "readwrite");
+        tx.objectStore("maps").put({ name, img: mapImg.src, points, scale, offsetX, offsetY });
+        alert("保存しました");
+    }
+
+    function showMapList() {
+        const container = document.getElementById('map-items-container');
+        container.innerHTML = "";
+        const tx = db.transaction("maps", "readonly");
+        tx.objectStore("maps").openCursor().onsuccess = e => {
+            const cursor = e.target.result;
+            if (cursor) {
+                const div = document.createElement('div');
+                div.className = 'map-item';
+                div.innerHTML = `
+                    <span>${cursor.value.name}</span>
+                    <div>
+                        <button class="btn" onclick="loadMap('${cursor.value.name}')">開く</button>
+                        <button class="btn btn-red" onclick="deleteMap('${cursor.value.name}')">削除</button>
+                    </div>
+                `;
+                container.appendChild(div);
+                cursor.continue();
+            }
+        };
+        document.getElementById('overlay').style.display = 'block';
+        document.getElementById('map-list-modal').style.display = 'block';
+    }
+
+    window.loadMap = name => {
+        const tx = db.transaction("maps", "readonly");
+        tx.objectStore("maps").get(name).onsuccess = e => {
+            const data = e.target.result;
+            mapImg = new Image();
+            mapImg.onload = () => {
+                points = data.points;
+                scale = data.scale;
+                offsetX = data.offsetX;
+                offsetY = data.offsetY;
+                document.getElementById('setup-panel').style.display = 'none';
+                document.getElementById('main-panel').style.display = 'flex';
+                closeMapList();
+                draw();
+            };
+            mapImg.src = data.img;
+        };
+    };
+
+    window.deleteMap = name => {
+        if (!confirm(`${name} を削除しますか？`)) return;
+        const tx = db.transaction("maps", "readwrite");
+        tx.objectStore("maps").delete(name).onsuccess = () => showMapList();
+    };
+
+    function closeMapList() {
+        document.getElementById('overlay').style.display = 'none';
+        document.getElementById('map-list-modal').style.display = 'none';
+    }
+
+    window.onresize = () => {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        draw();
+    };
+</script>
+</body>
+</html>
