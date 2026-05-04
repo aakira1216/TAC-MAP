@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>Tactical Map Pro</title>
+    <style>
+        /* --- 共通変数（縦位置のスタイルを継承） --- */
+        :root { 
+            --panel-bg: rgba(30, 41, 59, 0.9);
+            --accent: #3b82f6; 
+            --danger: #ef4444;
+            --text: #f8fafc;
+        }
+
+        body { margin: 0; background: #000; color: var(--text); font-family: sans-serif; overflow: hidden; height: 100dvh; }
+
+        /* --- パネル基本設定 --- */
+        #panel {
+            position: fixed;
+            z-index: 2000;
+            background: var(--panel-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 20px;
+            padding: 15px;
+            transition: all 0.3s ease;
+        }
+
+        /* 縦画面用：下配置 */
+        @media (orientation: portrait) {
+            #panel { bottom: 20px; left: 15px; right: 15px; }
+            .coord-row { display: flex; gap: 8px; margin-bottom: 10px; }
+            .coord-row input { flex: 1; padding: 12px; font-size: 18px; text-align: center; border-radius: 8px; border: 1px solid #444; background: #111; color: #fff; }
+        }
+
+        /* --- 【横画面用：フローティング最適化】 --- */
+        @media (orientation: landscape) {
+            #panel {
+                top: 20px; 
+                left: 20px;
+                bottom: auto;
+                right: auto;
+                /* 「地点1をタップ」が1行で収まる程度の幅 (約160px〜180px) */
+                width: 170px; 
+                border-radius: 15px;
+                padding: 12px;
+            }
+
+            /* 座標入力：ボックスを突き抜けて表示（フローティング） */
+            .coord-row {
+                display: flex;
+                gap: 5px;
+                margin-bottom: 8px;
+                width: 280px; /* パネル幅(170px)を超えて広がる */
+                position: relative;
+                z-index: 2100;
+            }
+
+            .coord-row input {
+                padding: 10px 5px;
+                font-size: 16px;
+                background: rgba(17, 17, 17, 0.95); /* 背後の地図が見えすぎないよう少し濃く */
+                color: #fff;
+                border: 1px solid var(--accent);
+                border-radius: 6px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.5); /* 浮いている感を強調 */
+            }
+
+            /* 度(整数)と分(小数)の比率 */
+            .coord-row input:first-child { width: 60px; }
+            .coord-row input:last-child { width: 140px; }
+
+            /* ボタンはパネル幅(170px)にフィット */
+            button {
+                width: 100% !important;
+                padding: 10px 0 !important;
+                font-size: 13px !important;
+                margin: 4px 0 !important;
+            }
+            
+            .guide-text {
+                font-size: 13px;
+                white-space: nowrap; /* 1行で収める */
+                margin-bottom: 10px;
+                display: block;
+            }
+        }
+
+        button { border-radius: 12px; border: none; font-weight: bold; cursor: pointer; color: white; }
+        .blue { background: var(--accent); }
+        .red { background: var(--danger); }
+    </style>
+</head>
+<body>
+
+<div id="panel">
+    <span class="guide-text">地点1をタップ</span>
+    
+    <!-- 座標入力エリア：横画面ではここがはみ出す -->
+    <div class="coord-row">
+        <input type="number" placeholder="35">
+        <input type="number" placeholder="12.3456">
+    </div>
+    <div class="coord-row">
+        <input type="number" placeholder="135">
+        <input type="number" placeholder="54.7890">
+    </div>
+
+    <button class="red">P1登録</button>
+    <button class="blue" style="opacity: 0.5;">P2登録</button>
+</div>
+
+</body>
+</html>
