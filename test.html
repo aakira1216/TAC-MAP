@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>Map Tracker Tactical v22.0</title>
+    
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+    <style>
+        :root { 
+            --bg: #0f172a; --panel-bg: rgba(30, 41, 59, 0.9); --accent: #3b82f6; 
+            --success: #10b981; --danger: #ef4444; --text: #f8fafc;
+            --glass: rgba(15, 23, 42, 0.6); --glass-border: rgba(255, 255, 255, 0.2);
+            --btn-bg: rgba(255, 255, 255, 0.1); --filter-color: transparent;
+        }
+        /* スキン定義継承 */
+        body.theme-1 { --bg: #d2b48c; --panel-bg: rgba(210, 180, 140, 0.95); --accent: #d97706; --text: #1a1a1a; --filter-color: rgba(217, 119, 6, 0.07); }
+        body.theme-2 { --bg: #2d3436; --panel-bg: rgba(60, 70, 50, 0.95); --accent: #a3b18a; --text: #dad7cd; --filter-color: rgba(163, 177, 138, 0.08); }
+        body.theme-3 { --bg: #000000; --panel-bg: rgba(20, 15, 0, 0.95); --accent: #ffbf00; --text: #ffbf00; --filter-color: rgba(255, 191, 0, 0.07); }
+        body.theme-4 { --bg: #000000; --panel-bg: rgba(20, 0, 0, 0.95); --accent: #ff0000; --text: #ff0000; --filter-color: rgba(255, 0, 0, 0.07); }
+        body.theme-5 { --bg: #000000; --panel-bg: rgba(0, 20, 0, 0.9); --accent: #39ff14; --text: #39ff14; --filter-color: rgba(57, 255, 20, 0.08); }
+
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; overflow: hidden; height: 100dvh; width: 100%; position: fixed; transition: background 0.3s, color 0.3s; }
+        #viewport { position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden; touch-action: none; -webkit-user-select: none; }
+        #map-filter { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; background: var(--filter-color); }
+        #map-container { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; z-index: 1; }
+        #map-img { display: none; pointer-events: none; vertical-align: top; }
+        
+        #game-over-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(127, 0, 0, 0.9); z-index: 9999; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: white; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+        
+        .dot { position: absolute; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff; transform: translate(-50%, -50%); display: none; z-index: 1000; pointer-events: none; }
+        .player-marker { position: absolute; transform: translate(-50%, -50%); z-index: 1004; pointer-events: none; text-align: center; }
+        .player-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; margin: 0 auto; box-shadow: 0 0 8px rgba(0,0,0,0.5); }
+        .player-name { font-size: 10px; font-weight: bold; background: rgba(0,0,0,0.6); padding: 1px 4px; border-radius: 4px; margin-top: 2px; white-space: nowrap; }
+
+        .target-marker { position: absolute; font-weight: bold; font-size: 18px; z-index: 1005; pointer-events: none; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 8px; background: var(--glass); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); border: 2px solid var(--glass-border); transform: translate(-50%, -50%); }
+        
+        #user-container { position: absolute; pointer-events: none; display: none; z-index: 1100; }
+        #user-dot-wrapper { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+        #user-dot { width: 0; height: 0; border-left: 10px solid transparent; border-right: 10px solid transparent; border-bottom: 24px solid var(--accent); position: absolute; top: 50%; left: 50%; transform: translate(-50%, -70%); }
+        
+        #hud-info-list { position: absolute; top: 45px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: flex-start; padding: 4px 10px; border-radius: 10px; background: var(--glass); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid var(--glass-border); min-width: max-content; pointer-events: none; }
+        .hud-row { font-size: 12px; font-weight: 900; font-family: monospace; height: 18px; display: flex; align-items: center; width: 100%; text-shadow: 1px 1px 1px #000; }
+        
+        #panel { position: fixed; bottom: 20px; left: 15px; right: 15px; padding: 15px; background: var(--panel-bg); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); border-radius: 20px; z-index: 2000; border: 1px solid rgba(255,255,255,0.1); }
+        .step { display: none; } .active { display: block; }
+        button { width: 100%; padding: 14px; margin: 5px 0; border-radius: 12px; border: none; font-weight: bold; font-size: 16px; touch-action: manipulation; }
+        .blue { background: var(--accent); color: white; } 
+        .red { background: var(--danger); color: white; } 
+        .outline { background: var(--btn-bg); border: 1px solid rgba(255,255,255,0.4); color: var(--text); }
+        
+        input { width: 100%; padding: 10px; margin: 5px 0; border-radius: 8px; border: 1px solid #444; background: #1a1a1a; color: white; box-sizing: border-box; }
+        
+        #team-panel, #qr-panel { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 320px; background: var(--panel-bg); padding: 20px; border-radius: 24px; border: 1px solid var(--accent); z-index: 3500; box-shadow: 0 20px 50px rgba(0,0,0,0.6); }
+        #qr-display { background: white; padding: 15px; border-radius: 12px; margin: 15px auto; width: 200px; height: 200px; }
+        #team-status-bar { position: fixed; top: 10px; left: 15px; background: var(--glass); padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: bold; display: none; z-index: 1001; border: 1px solid var(--glass-border); }
+
+        #ui-overlay { position: fixed; top: 44px; right: 15px; display: none; flex-direction: column; gap: 12px; z-index: 1002; }
+        .ui-btn { width: 50px; height: 50px; background: var(--panel-bg); color: var(--text); border-radius: 12px; border: 1px solid var(--glass-border); display: flex; align-items: center; justify-content: center; font-size: 24px; }
+
+        @media (orientation: landscape) {
+            #panel:has(#s0.active), #panel:has(#s4.active) { width: 140px !important; bottom: auto; top: 15px; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-over-overlay">
+    <h1 style="font-size: 32px; margin-bottom: 10px;">TACTICAL ERROR</h1>
+    <p id="game-over-msg">リーダーが離脱しました。<br>作戦を中止し、即座に撤収してください。</p>
+    <button class="outline" onclick="location.reload()" style="width: 200px; margin-top: 30px;">了解</button>
+</div>
+
+<div id="viewport">
+    <div id="map-container"><img id="map-img"></div>
+    <div id="map-filter"></div>
+    <svg id="line-svg" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:900;"></svg>
+    <div id="p1-dot" class="dot"></div>
+    <div id="p2-dot" class="dot"></div>
+    <div id="temp-target-dot" class="dot"></div>
+    <div id="player-layer"></div>
+    <div id="target-layer"></div>
+    <div id="user-container">
+        <div id="user-dot-wrapper"><div id="user-dot"></div></div>
+        <div id="hud-info-list" style="display:none;"></div>
+    </div>
+</div>
+
+<div id="team-status-bar"></div>
+
+<div id="ui-overlay">
+    <div id="btn-lock" class="ui-btn" onclick="toggleTracking()">🎯</div>
+    <div id="btn-rotate" class="ui-btn" onclick="cycleRotateMode()">🧭</div>
+</div>
+
+<div id="team-panel">
+    <h3 style="text-align:center; color:var(--accent); margin-top:0;">共有設定</h3>
+    <input type="text" id="share-name" placeholder="表示名（例: Alpha1）">
+    <input type="text" id="share-group" placeholder="グループID">
+    <input type="text" id="share-team" placeholder="チーム名">
+    <div style="display:flex; gap:10px; margin:10px 0;">
+        <select id="share-side" style="flex:1; padding:10px; border-radius:8px; background:#1a1a1a; color:white;">
+            <option value="blue">陣営: 青</option>
+            <option value="red">陣営: 赤</option>
+        </select>
+        <label style="flex:1; display:flex; align-items:center; gap:5px; font-size:12px;">
+            <input type="checkbox" id="share-is-leader"> リーダー
+        </label>
+    </div>
+    <button class="blue" onclick="startSharing()">共有開始</button>
+    <button class="outline" onclick="generateQR()">設定をQRで共有</button>
+    <button class="outline" onclick="toggleTeamPanel()" style="margin-top:10px;">閉じる</button>
+</div>
+
+<div id="qr-panel">
+    <div id="qr-display"></div>
+    <button class="outline" onclick="el('qr-panel').style.display='none'">閉じる</button>
+</div>
+
+<div id="panel">
+    <div id="s0" class="step active">
+        <h3 style="margin:0;color:var(--accent);">Tactical Tracker v22.0</h3>
+        <button class="blue" onclick="startNewMap()">＋ 新規マップ</button>
+        <button class="outline" onclick="showMapList()">📂 保存地図</button>
+        <button class="outline" onclick="toggleTeamPanel()" style="border-color:var(--accent)">📡 チーム共有</button>
+    </div>
+    
+    <div id="s2" class="step">
+        <p id="guide" style="font-weight:bold; font-size: 13px;">地点1をタップ</p>
+        <div id="p1-inputs">
+            <input type="text" id="lat1_int" placeholder="緯度(整数)">.<input type="text" id="lat1_dec" placeholder="小数">
+            <input type="text" id="lng1_int" placeholder="経度(整数)">.<input type="text" id="lng1_dec" placeholder="小数">
+            <button onclick="confirmP1()" class="red">P1登録</button>
+        </div>
+        <div id="p2-inputs" style="display:none">
+            <input type="text" id="lat2_int" placeholder="緯度">.<input type="text" id="lat2_dec" placeholder="小数">
+            <input type="text" id="lng2_int" placeholder="経度">.<input type="text" id="lng2_dec" placeholder="小数">
+            <button onclick="confirmP2()" class="blue" style="background:var(--success)">P2登録</button>
+        </div>
+    </div>
+
+    <div id="s4" class="step">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div id="status" style="font-size:12px; font-weight:bold;">GPS待機...</div>
+            <div style="display:flex; gap:6px;">
+                <button id="gyro-btn" onclick="askGyro()" class="blue" style="width:80px; font-size:11px;">方位許可</button>
+                <button onclick="exitApp()" class="outline" style="width:50px; font-size:11px;">終了</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="s-list" class="step">
+        <div id="map-list-container"></div>
+        <button class="outline" onclick="showStep(0)">戻る</button>
+    </div>
+</div>
+
+<script>
+    // --- Firebase Configuration (画像7枚目) ---
+    const firebaseConfig = {
+        apiKey: "AIzaSyDKPvOcJ0y79_7_oVW0KF8YR0",
+        authDomain: "tac-map-multi.firebaseapp.com",
+        databaseURL: "https://tac-map-multi-default-rtdb.firebaseio.com",
+        projectId: "tac-map-multi",
+        storageBucket: "tac-map-multi.appspot.com",
+        messagingSenderId: "530840369600",
+        appId: "1:530840369600:web:88b595c9789a"
+    };
+
+    let db_fb = null;
+    try {
+        firebase.initializeApp(firebaseConfig);
+        db_fb = firebase.database();
+    } catch(e) { console.log("Solo Mode"); }
+
+    const DB_NAME = "MapTrackerDB", STORE_NAME = "maps";
+    let db_idb, pointers = [], lastDist = 0, lastPoint = null, ticking = false;
+    
+    const state = { 
+        step: 0, p1: null, p2: null, scale: 1, x: 0, y: 0, isTracking: true, rotateMode: 0, 
+        userPos: {x:0, y:0}, userHeading: 0, mapNorth: 0, metersPerPixel: 0,
+        sharing: false, myId: 'anon-' + Math.random().toString(36).substr(2, 5),
+        group: '', team: '', name: '', side: 'blue', isLeader: false, players: {}
+    };
+
+    const el = id => document.getElementById(id);
+    const haptic = () => window.navigator.vibrate?.(10);
+
+    // --- データベース初期化 ---
+    const initDB = () => new Promise(r => {
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = e => e.target.result.createObjectStore(STORE_NAME, { keyPath: "id", autoIncrement: true });
+        req.onsuccess = e => { db_idb = e.target.result; r(); };
+    });
+
+    // --- 共有ロジック ---
+    function toggleTeamPanel() { haptic(); el('team-panel').style.display = el('team-panel').style.display === 'block' ? 'none' : 'block'; }
+    
+    function startSharing() {
+        if(!db_fb) return alert("Firebase Error");
+        state.group = el('share-group').value;
+        state.team = el('share-team').value;
+        state.name = el('share-name').value || "Unknown";
+        state.side = el('share-side').value;
+        state.isLeader = el('share-is-leader').checked;
+        if(!state.group || !state.team) return alert("入力不足");
+        state.sharing = true;
+        const ref = db_fb.ref(`groups/${state.group}/players`);
+        ref.on('value', snapshot => {
+            state.players = snapshot.val() || {};
+            checkLeaderStatus();
+            requestRender();
+        });
+        el('team-panel').style.display = 'none';
+        el('team-status-bar').style.display = 'block';
+        el('team-status-bar').innerText = `📡 ${state.team} | ${state.name}`;
+    }
+
+    function checkLeaderStatus() {
+        if(!state.sharing || state.isLeader) return;
+        let leaderExists = false;
+        for(let id in state.players) {
+            let p = state.players[id];
+            if(p.team === state.team && p.isLeader) { leaderExists = true; break; }
+        }
+        if(!leaderExists && Object.keys(state.players).length > 0) el('game-over-overlay').style.display = 'flex';
+    }
+
+    function updateCloudPos() {
+        if(!state.sharing || !state.userPos.x || !db_fb) return;
+        db_fb.ref(`groups/${state.group}/players/${state.myId}`).set({
+            name: state.name, team: state.team, side: state.side, isLeader: state.isLeader,
+            x: state.userPos.x, y: state.userPos.y, timestamp: Date.now()
+        });
+    }
+
+    // --- 地図制御ロジック (V21.7 継承) ---
+    function showStep(n){ haptic(); document.querySelectorAll('.step').forEach(s=>s.classList.remove('active')); if(el('s'+n)) el('s'+n).classList.add('active'); state.step=n; requestRender(); }
+
+    function startNewMap() { 
+        const input = document.createElement('input'); input.type='file'; input.accept='image/*'; 
+        input.onchange=e=>{ 
+            const file=e.target.files[0]; if(!file)return; state.currentImgBlob=file;
+            const img = el('map-img'); img.src = URL.createObjectURL(file);
+            img.onload = () => { img.style.display='block'; fitImage(); showStep(2); };
+        }; input.click();
+    }
+
+    function fitImage() {
+        const img = el('map-img'); state.scale = Math.min(window.innerWidth/img.naturalWidth, window.innerHeight/img.naturalHeight)*0.8;
+        state.x = window.innerWidth/2 - (img.naturalWidth/2*state.scale); state.y = window.innerHeight/2 - (img.naturalHeight/2*state.scale);
+        requestRender();
+    }
+
+    el('viewport').addEventListener('pointerdown', e => { el('viewport').setPointerCapture(e.pointerId); pointers.push(e); if(pointers.length===1) lastPoint={x:e.clientX, y:e.clientY}; });
+    el('viewport').addEventListener('pointermove', e => {
+        const idx = pointers.findIndex(p => p.pointerId === e.pointerId); if(idx===-1) return; pointers[idx]=e;
+        if(pointers.length===1 && lastPoint){ state.x+=e.clientX-lastPoint.x; state.y+=e.clientY-lastPoint.y; lastPoint={x:e.clientX, y:e.clientY}; state.isTracking=false; requestRender(); }
+    });
+    el('viewport').addEventListener('pointerup', e => { pointers=pointers.filter(p=>p.pointerId!==e.pointerId); if(state.step===2) handleTap(e); });
+
+    function handleTap(e) {
+        state.tempPoint = { x: (e.clientX - state.x) / state.scale, y: (e.clientY - state.y) / state.scale };
+        requestRender();
+    }
+
+    function confirmP1() { state.p1 = {...state.tempPoint, lat: parseFloat(el('lat1_int').value+'.'+el('lat1_dec').value), lng: parseFloat(el('lng1_int').value+'.'+el('lng1_dec').value)}; el('p1-inputs').style.display='none'; el('p2-inputs').style.display='block'; el('guide').innerText="地点2をタップ"; }
+    function confirmP2() { 
+        state.p2 = {...state.tempPoint, lat: parseFloat(el('lat2_int').value+'.'+el('lat2_dec').value), lng: parseFloat(el('lng2_int').value+'.'+el('lng2_dec').value)};
+        const r = Math.PI/180;
+        state.metersPerPixel = (6371000 * Math.acos(Math.sin(state.p1.lat*r)*Math.sin(state.p2.lat*r)+Math.cos(state.p1.lat*r)*Math.cos(state.p2.lat*r)*Math.cos((state.p2.lng-state.p1.lng)*r))) / Math.hypot(state.p2.x-state.p1.x, state.p2.y-state.p1.y);
+        state.mapNorth = (Math.atan2(state.p2.x-state.p1.x, state.p1.y-state.p2.y)*180/Math.PI) - (Math.atan2(state.p2.lng-state.p1.lng, state.p2.lat-state.p1.lat)*180/Math.PI);
+        saveAndStart();
+    }
+
+    function saveAndStart() { 
+        showStep(4); el('ui-overlay').style.display='flex';
+        navigator.geolocation.watchPosition(p => {
+            state.userPos = {
+                x: state.p1.x + (p.coords.longitude - state.p1.lng) / (state.p2.lng - state.p1.lng) * (state.p2.x - state.p1.x),
+                y: state.p1.y + (p.coords.latitude - state.p1.lat) / (state.p2.lat - state.p1.lat) * (state.p2.y - state.p1.y)
+            };
+            el('status').innerText = `精度: ±${Math.round(p.coords.accuracy)}m`;
+            updateCloudPos(); requestRender();
+        }, null, {enableHighAccuracy:true});
+    }
+
+    function requestRender() { if(!ticking) { requestAnimationFrame(() => { render(); ticking=false; }); ticking=true; } }
+
+    function render() {
+        const rot = (state.rotateMode === 1) ? -state.mapNorth : (state.rotateMode === 2) ? -state.mapNorth - state.userHeading : 0;
+        const rad = rot * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+        
+        if(state.isTracking && state.userPos.x) {
+            const sx = window.innerWidth/2, sy = (state.rotateMode===2)?window.innerHeight*0.7:window.innerHeight/2;
+            state.x = sx - (state.userPos.x * state.scale * cos - state.userPos.y * state.scale * sin);
+            state.y = sy - (state.userPos.x * state.scale * sin + state.userPos.y * state.scale * cos);
+        }
+        el('map-container').style.transform = `translate(${state.x}px, ${state.y}px) rotate(${rot}deg) scale(${state.scale})`;
+        
+        // 自アイコン
+        const uC = el('user-container');
+        if(state.userPos.x) {
+            const ux = state.x + (state.userPos.x * state.scale * cos - state.userPos.y * state.scale * sin);
+            const uy = state.y + (state.userPos.x * state.scale * sin + state.userPos.y * state.scale * cos);
+            uC.style.left = ux+'px'; uC.style.top = uy+'px'; uC.style.display='block';
+            el('user-dot-wrapper').style.transform = `translate(-50%, -50%) rotate(${state.userHeading + state.mapNorth + rot}deg)`;
+        }
+        
+        // 他プレイヤー描画
+        const pLayer = el('player-layer'); pLayer.innerHTML = '';
+        if(state.sharing) {
+            for(let id in state.players) {
+                if(id === state.myId) continue;
+                const p = state.players[id];
+                const tx = state.x + (p.x * state.scale * cos - p.y * state.scale * sin);
+                const ty = state.y + (p.x * state.scale * sin + p.y * state.scale * cos);
+                const m = document.createElement('div'); m.className='player-marker'; m.style.left=tx+'px'; m.style.top=ty+'px';
+                m.innerHTML = `<div class="player-dot" style="background:${p.side==='red'?'var(--danger)':'var(--success)'}"></div><div class="player-name">${p.name}</div>`;
+                pLayer.appendChild(m);
+            }
+        }
+    }
+
+    async function showMapList() {
+        showStep('-list'); const list = el('map-list-container'); list.innerHTML = "";
+        const tx = db_idb.transaction(STORE_NAME, "readonly");
+        tx.objectStore(STORE_NAME).getAll().onsuccess = e => {
+            e.target.result.forEach(m => {
+                const b = document.createElement('button'); b.innerText = m.name; b.onclick = () => {
+                    state.p1=m.p1; state.p2=m.p2; state.mapNorth=m.mapNorth; state.metersPerPixel=m.metersPerPixel;
+                    const img = el('map-img'); img.src = URL.createObjectURL(m.image);
+                    img.onload = () => { img.style.display='block'; fitImage(); saveAndStart(); };
+                }; list.appendChild(b);
+            });
+        };
+    }
+
+    function toggleTracking(){ haptic(); state.isTracking=!state.isTracking; requestRender(); }
+    function cycleRotateMode(){ haptic(); state.rotateMode=(state.rotateMode+1)%3; requestRender(); }
+    async function askGyro(){ 
+        const handler = e => { state.userHeading = e.webkitCompassHeading || 360 - e.alpha; requestRender(); };
+        if(DeviceOrientationEvent?.requestPermission) await DeviceOrientationEvent.requestPermission();
+        window.addEventListener('deviceorientation', handler, true); el('gyro-btn').style.display='none';
+    }
+    function exitApp() { location.reload(); }
+    window.onload = async () => { await initDB(); };
+</script>
+</body>
+</html>
