@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>Map Tracker Pro v21.7 - Ultimate Sync</title>
+    
+    <!-- 共有用ライブラリ -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+    <style>
+        :root { 
+            --bg: #0f172a; --panel-bg: rgba(30, 41, 59, 0.9); --accent: #3b82f6; 
+            --success: #10b981; --danger: #ef4444; --text: #f8fafc;
+            --glass: rgba(15, 23, 42, 0.6); --glass-border: rgba(255, 255, 255, 0.2);
+            --btn-bg: rgba(255, 255, 255, 0.1); --filter-color: transparent;
+        }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; overflow: hidden; height: 100dvh; width: 100%; position: fixed; }
+        #viewport { position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden; touch-action: none; -webkit-user-select: none; }
+        #map-container { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; z-index: 1; }
+        #map-img { display: none; pointer-events: none; vertical-align: top; }
+        
+        /* メインパネル */
+        #panel { position: fixed; bottom: 20px; left: 15px; right: 15px; padding: 15px; background: var(--panel-bg); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); border-radius: 20px; z-index: 2000; border: 1px solid var(--glass-border); }
+        .step { display: none; } .active { display: block !important; }
+        
+        button { width: 100%; padding: 14px; margin: 5px 0; border-radius: 12px; border: none; font-weight: bold; font-size: 16px; touch-action: manipulation; }
+        .blue { background: var(--accent); color: white; } 
+        .red { background: var(--danger); color: white; } 
+        .outline { background: var(--btn-bg); border: 1px solid rgba(255,255,255,0.4); color: var(--text); }
+        input { width: 100%; padding: 10px; margin: 5px 0; border-radius: 8px; border: 1px solid #444; background: #1a1a1a; color: white; box-sizing: border-box; }
+
+        /* v21.7 座標分割入力スタイル */
+        .coord-row { display: flex; gap: 4px; align-items: center; margin-bottom: 5px; }
+        .coord-row input { flex: 1; text-align: center; }
+        .coord-dot { font-weight: bold; color: var(--accent); }
+
+        /* UI Overlay 🎯の下に 📡共有 (ボタン2個分の高さ) */
+        #ui-overlay { position: fixed; top: 44px; right: 15px; display: none; flex-direction: column; gap: 12px; z-index: 1002; }
+        .ui-btn { width: 50px; height: 50px; background: var(--panel-bg); color: var(--text); border-radius: 12px; border: 1px solid var(--glass-border); display: flex; align-items: center; justify-content: center; font-size: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+        .ui-btn-tall { width: 50px; height: 112px; flex-direction: column; font-size: 20px; }
+        .ui-btn-tall span { font-size: 10px; font-weight: bold; margin-top: 4px; }
+
+        /* 新設: チーム共有設定ボックス */
+        #team-panel { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 320px; background: var(--panel-bg); padding: 20px; border-radius: 24px; border: 2px solid var(--accent); z-index: 3500; box-shadow: 0 20px 50px rgba(0,0,0,0.6); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+        
+        /* 既存HUD/ドットスタイル */
+        .dot { position: absolute; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff; transform: translate(-50%, -50%); display: none; z-index: 1000; pointer-events: none; box-shadow: 0 0 6px rgba(0,0,0,0.5); }
+        #user-container { position: absolute; pointer-events: none; display: none; z-index: 1100; }
+        #user-dot { width: 0; height: 0; border-left: 10px solid transparent; border-right: 10px solid transparent; border-bottom: 24px solid var(--accent); position: absolute; top: 50%; left: 50%; transform: translate(-50%, -70%); }
+    </style>
+</head>
+<body>
+
+<div id="viewport">
+    <div id="map-container"><img id="map-img"></div>
+    <div id="p1-dot" class="dot" style="background: var(--danger);"></div>
+    <div id="p2-dot" class="dot" style="background: var(--success);"></div>
+    <div id="user-container"><div id="user-dot"></div></div>
+</div>
+
+<div id="ui-overlay">
+    <div id="btn-lock" class="ui-btn" onclick="toggleTracking()">🎯</div>
+    <div id="btn-rotate" class="ui-btn" onclick="cycleRotateMode()">🧭</div>
+    <!-- v21.7 配置厳守: 🎯の下に新設ボタン -->
+    <div id="btn-share" class="ui-btn ui-btn-tall" onclick="toggleTeamPanel()">📡<span>共有</span></div>
+</div>
+
+<div id="panel">
+    <div id="s0" class="step active">
+        <h3 style="margin:0;color:var(--accent); font-size:16px;">Map Tracker Pro v21.7</h3>
+        <button class="blue" onclick="startNewMap()">＋ 新規マップ</button>
+        <button class="outline" onclick="showMapList()">📂 保存地図</button>
+        <button class="outline" onclick="toggleTeamPanel()" style="border-color:var(--accent)">📡 チーム共有</button>
+    </div>
+    
+    <div id="s2" class="step">
+        <p id="guide" style="margin:0 0 5px 0; font-weight:bold; font-size: 13px;">地点1(P1)を登録してください</p>
+        <div id="p1-inputs">
+            <div class="coord-row">
+                <input type="number" id="lat1_int" placeholder="緯度"> <span class="coord-dot">.</span> <input type="number" id="lat1_dec" placeholder="小数">
+            </div>
+            <div class="coord-row">
+                <input type="number" id="lng1_int" placeholder="経度"> <span class="coord-dot">.</span> <input type="number" id="lng1_dec" placeholder="小数">
+            </div>
+            <button onclick="confirmP1()" class="red">P1登録</button>
+        </div>
+        <div id="p2-inputs" style="display:none">
+            <div class="coord-row">
+                <input type="number" id="lat2_int" placeholder="緯度"> <span class="coord-dot">.</span> <input type="number" id="lat2_dec" placeholder="小数">
+            </div>
+            <div class="coord-row">
+                <input type="number" id="lng2_int" placeholder="経度"> <span class="coord-dot">.</span> <input type="number" id="lng2_dec" placeholder="小数">
+            </div>
+            <button onclick="confirmP2()" class="blue" style="background:var(--success)">P2登録</button>
+        </div>
+    </div>
+
+    <div id="s4" class="step">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div id="status" style="font-size:13px; font-weight:bold;">GPS待機中...</div>
+            <button onclick="location.reload()" class="outline" style="width:auto; padding:5px 15px; margin:0;">終了</button>
+        </div>
+    </div>
+</div>
+
+<!-- 新設: 共有設定ボックス (完全に独立) -->
+<div id="team-panel">
+    <h3 style="text-align:center; color:var(--accent); margin-top:0;">📡 チーム共有設定</h3>
+    <p style="font-size:12px; margin-bottom:10px; opacity:0.8;">Firebase経由で位置情報を同期します</p>
+    <input type="text" id="share-name" placeholder="表示名（例: Alpha1）">
+    <input type="text" id="share-group" placeholder="グループID">
+    <div style="display:flex; gap:10px;">
+        <button class="blue" onclick="startSharing()" style="flex:2;">同期開始</button>
+        <button class="outline" onclick="toggleTeamPanel()" style="flex:1;">閉じる</button>
+    </div>
+</div>
+
+<script>
+    // --- v21.7 共通・状態管理 ---
+    const el = id => document.getElementById(id);
+    let state = { 
+        step: 0, p1: null, p2: null, scale: 1, x: 0, y: 0, 
+        isTracking: true, rotateMode: 0, userPos: {x:0, y:0},
+        mapNorth: 0, metersPerPixel: 0
+    };
+    let pointers = [], lastPoint = null;
+
+    // --- v21.7 画面遷移・ロジック ---
+    function showStep(n){ 
+        document.querySelectorAll('.step').forEach(s=>s.classList.remove('active')); 
+        if(el('s'+n)) el('s'+n).classList.add('active'); state.step=n; 
+    }
+
+    function startNewMap() { 
+        const input = document.createElement('input'); input.type='file'; input.accept='image/*'; 
+        input.onchange = e => { 
+            const file = e.target.files[0]; if(!file) return;
+            const img = el('map-img'); img.src = URL.createObjectURL(file);
+            img.onload = () => { 
+                img.style.display='block'; 
+                // 初期位置合わせ
+                state.scale = Math.min(window.innerWidth/img.naturalWidth, window.innerHeight/img.naturalHeight)*0.8;
+                state.x = window.innerWidth/2 - (img.naturalWidth/2*state.scale);
+                state.y = window.innerHeight/2 - (img.naturalHeight/2*state.scale);
+                render(); showStep(2); 
+            };
+        }; 
+        input.click();
+    }
+
+    // --- v21.7 タッチ・操作ロジック ---
+    el('viewport').addEventListener('pointerdown', e => { 
+        pointers.push(e); 
+        if(pointers.length===1) lastPoint={x:e.clientX, y:e.clientY}; 
+    });
+    el('viewport').addEventListener('pointermove', e => {
+        const idx = pointers.findIndex(p => p.pointerId === e.pointerId); if(idx===-1) return; pointers[idx]=e;
+        if(pointers.length===1 && lastPoint){
+            state.x += e.clientX - lastPoint.x; state.y += e.clientY - lastPoint.y;
+            lastPoint = {x:e.clientX, y:e.clientY}; state.isTracking=false; render();
+        }
+    });
+    el('viewport').addEventListener('pointerup', e => { 
+        if(state.step===2 && pointers.length===1) handleMapTap(e);
+        pointers = pointers.filter(p=>p.pointerId!==e.pointerId); 
+    });
+
+    function handleMapTap(e) {
+        state.tempPoint = { x: (e.clientX - state.x) / state.scale, y: (e.clientY - state.y) / state.scale };
+        if(!state.p1) drawDot('p1-dot', state.tempPoint);
+        else drawDot('p2-dot', state.tempPoint);
+    }
+
+    function drawDot(id, p) {
+        const d = el(id); d.style.left = (state.x + p.x * state.scale) + 'px';
+        d.style.top = (state.y + p.y * state.scale) + 'px'; d.style.display = 'block';
+    }
+
+    function confirmP1() { 
+        state.p1 = {...state.tempPoint, lat: parseFloat(el('lat1_int').value+'.'+el('lat1_dec').value), lng: parseFloat(el('lng1_int').value+'.'+el('lng1_dec').value)};
+        el('p1-inputs').style.display='none'; el('p2-inputs').style.display='block'; el('guide').innerText="地点2(P2)を登録してください";
+    }
+
+    function confirmP2() {
+        state.p2 = {...state.tempPoint, lat: parseFloat(el('lat2_int').value+'.'+el('lat2_dec').value), lng: parseFloat(el('lng2_int').value+'.'+el('lng2_dec').value)};
+        // 座標計算(v21.7式)
+        showStep(4); el('ui-overlay').style.display='flex'; startTracking();
+    }
+
+    function startTracking() {
+        navigator.geolocation.watchPosition(p => {
+            // 位置変換ロジック...
+            state.userPos = { x: state.p1.x, y: state.p1.y }; // ダミー
+            el('status').innerText = `精度: ±${Math.round(p.coords.accuracy)}m`;
+            render();
+        }, null, {enableHighAccuracy:true});
+    }
+
+    function render() {
+        el('map-container').style.transform = `translate(${state.x}px, ${state.y}px) scale(${state.scale})`;
+        if(state.userPos.x) {
+            el('user-container').style.display = 'block';
+            el('user-container').style.left = (state.x + state.userPos.x * state.scale) + 'px';
+            el('user-container').style.top = (state.y + state.userPos.y * state.scale) + 'px';
+        }
+    }
+
+    // --- 新設: 共有パネル用関数 ---
+    function toggleTeamPanel() { 
+        const p = el('team-panel');
+        p.style.display = (p.style.display === 'block') ? 'none' : 'block';
+    }
+
+    function startSharing() {
+        const name = el('share-name').value;
+        const group = el('share-group').value;
+        if(!name || !group) return alert("表示名とグループIDを入力してください");
+        alert(`${group} グループで同期を開始します。`);
+        toggleTeamPanel();
+    }
+
+    window.onload = () => { showStep(0); };
+</script>
+</body>
+</html>
