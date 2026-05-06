@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>Map Tracker Pro v23.2 - Master Full</title>
+    <style>
+        :root { 
+            --bg: #0f172a; --panel-bg: rgba(30, 41, 59, 0.9); --accent: #3b82f6; 
+            --success: #10b981; --danger: #ef4444; --text: #f8fafc;
+            --glass: rgba(15, 23, 42, 0.6); --glass-border: rgba(255, 255, 255, 0.2);
+            --btn-bg: rgba(255, 255, 255, 0.1); --filter-color: transparent;
+        }
+        /* スキン定義 */
+        body.theme-1 { --bg: #d2b48c; --panel-bg: rgba(210, 180, 140, 0.95); --accent: #d97706; --text: #1a1a1a; --filter-color: rgba(217, 119, 6, 0.07); }
+        body.theme-2 { --bg: #2d3436; --panel-bg: rgba(60, 70, 50, 0.95); --accent: #a3b18a; --text: #dad7cd; --filter-color: rgba(163, 177, 138, 0.08); }
+        body.theme-3 { --bg: #000000; --panel-bg: rgba(20, 15, 0, 0.95); --accent: #ffbf00; --text: #ffbf00; --filter-color: rgba(255, 191, 0, 0.07); }
+        body.theme-4 { --bg: #000000; --panel-bg: rgba(20, 0, 0, 0.95); --accent: #ff0000; --text: #ff0000; --filter-color: rgba(255, 0, 0, 0.07); }
+        body.theme-5 { --bg: #000000; --panel-bg: rgba(0, 20, 0, 0.9); --accent: #39ff14; --text: #39ff14; --filter-color: rgba(57, 255, 20, 0.08); }
+
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; overflow: hidden; height: 100dvh; width: 100%; position: fixed; }
+        #viewport { position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden; touch-action: none; -webkit-user-select: none; }
+        #map-filter { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; background: var(--filter-color); }
+        #map-container { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; z-index: 1; }
+        #map-img { display: none; pointer-events: none; vertical-align: top; }
+        
+        .dot { position: absolute; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff; transform: translate(-50%, -50%); display: none; z-index: 1000; pointer-events: none; }
+        .share-marker { position: absolute; width: 18px; height: 18px; border-radius: 50%; border: 2px solid #fff; transform: translate(-50%, -50%); z-index: 1050; pointer-events: none; }
+        .share-label { position: absolute; font-size: 10px; font-weight: 900; transform: translate(-50%, -24px); white-space: nowrap; text-shadow: 1px 1px 2px #000; z-index: 1051; background: rgba(0,0,0,0.4); padding: 1px 4px; border-radius: 4px; }
+        
+        #user-container { position: absolute; pointer-events: none; display: none; z-index: 1100; }
+        #user-dot-wrapper { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+        #user-dot { width: 0; height: 0; border-left: 10px solid transparent; border-right: 10px solid transparent; border-bottom: 24px solid var(--accent); position: absolute; top: 50%; left: 50%; transform: translate(-50%, -70%); }
+        #hud-visual { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+
+        #panel { position: fixed; bottom: 20px; left: 15px; right: 15px; padding: 15px; background: var(--panel-bg); backdrop-filter: blur(15px); border-radius: 20px; z-index: 2000; border: 1px solid rgba(255,255,255,0.1); }
+        .step { display: none; } .active { display: block; }
+        button { width: 100%; padding: 14px; margin: 5px 0; border-radius: 12px; border: none; font-weight: bold; font-size: 16px; touch-action: manipulation; }
+        button:active { opacity: 0.7; transform: scale(0.98); }
+        .blue { background: var(--accent); color: white; } 
+        .outline { background: var(--btn-bg); border: 1px solid rgba(255,255,255,0.4); color: var(--text); }
+        .coord-row { display: flex; align-items: center; gap: 4px; margin-bottom: 5px; }
+        input { width: 100%; padding: 10px; margin: 5px 0; border-radius: 8px; border: 1px solid #444; background: #1a1a1a; color: white; box-sizing: border-box; }
+
+        #ui-overlay { position: fixed; top: 44px; right: 15px; display: none; flex-direction: column; gap: 12px; z-index: 1002; }
+        .ui-btn { width: 50px; height: 50px; background: var(--panel-bg); color: var(--text); border-radius: 12px; border: 1px solid var(--glass-border); display: flex; align-items: center; justify-content: center; font-size: 24px; }
+        /* 共有ボタン: v21.7の基準ボタンより少し長い（75%サイズ） */
+        #btn-share { height: 84px; flex-direction: column; gap: 2px; font-size: 24px; }
+        #btn-share span { font-size: 10px; font-weight: bold; }
+
+        #hud-config-panel, #share-config-panel { display: none; position: fixed; top: 45%; left: 50%; transform: translate(-50%, -50%); width: 320px; background: var(--panel-bg); padding: 20px; border-radius: 20px; border: 1px solid var(--accent); z-index: 3000; max-height: 80dvh; overflow-y: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        #map-list-container { max-height: 300px; overflow-y: auto; margin: 10px 0; }
+        .map-item { padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; }
+
+        @media (orientation: landscape) {
+            #panel:has(#s0.active), #panel:has(#s2.active) { top: 15px; left: 15px; bottom: auto; right: auto; width: 160px; padding: 10px; }
+            #panel:has(#s4.active) { left: 15px; top: 15px; bottom: 15px; width: 85px; display: flex; flex-direction: column; justify-content: space-between; }
+            #ui-overlay { top: 50% !important; transform: translateY(-50%) !important; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="viewport">
+    <div id="map-container"><img id="map-img"></div>
+    <div id="map-filter"></div>
+    <div id="p1-dot" class="dot" style="background:var(--danger)"></div>
+    <div id="p2-dot" class="dot" style="background:var(--success)"></div>
+    <div id="temp-target-dot" class="dot"></div>
+    <div id="share-layer"></div>
+    <div id="user-container">
+        <div id="user-dot-wrapper">
+             <div id="user-dot"></div>
+             <svg id="hud-visual" width="1000" height="1000" viewBox="0 0 1000 1000">
+                <circle cx="500" cy="500" r="0" fill="rgba(59, 130, 246, 0.1)" stroke="rgba(59, 130, 246, 0.4)" stroke-width="2" id="hud-circle" />
+            </svg>
+        </div>
+    </div>
+</div>
+
+<div id="ui-overlay">
+    <div id="btn-lock" class="ui-btn" onclick="toggleTracking()">🎯</div>
+    <div id="btn-rotate" class="ui-btn" onclick="cycleRotateMode()">🧭</div>
+    <div id="btn-share" class="ui-btn" onclick="toggleShareConfig()">📡<span>共有</span></div>
+</div>
+
+<div id="hud-config-panel">
+    <h3 style="margin:0 0 10px 0; text-align:center; color:var(--accent);">HUD設定</h3>
+    <div style="display:flex;justify-content:space-between;margin:8px 0;"><span>HUD表示</span><input type="checkbox" id="hud-enable" onchange="updateHudSettings()" style="width:20px"></div>
+    <div style="display:flex;justify-content:space-between;margin:8px 0;"><span>スキン切替</span><input type="checkbox" id="skin-enable" onchange="toggleSkinList()" style="width:20px"></div>
+    <div id="skin-list-area" style="display:none; padding:8px; background:rgba(0,0,0,0.2); border-radius:10px;">
+        <label><input type="radio" name="skin" value="1" onchange="applySkin(1)"> Desert</label><br>
+        <label><input type="radio" name="skin" value="2" onchange="applySkin(2)"> Forest</label><br>
+        <label><input type="radio" name="skin" value="3" onchange="applySkin(3)"> Amber</label><br>
+        <label><input type="radio" name="skin" value="4" onchange="applySkin(4)"> Infra-Red</label><br>
+        <label><input type="radio" name="skin" value="5" onchange="applySkin(5)"> Cockpit</label>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin:8px 0;"><span>半径(m)</span><select id="hud-radius-select" onchange="updateHudSettings()" style="width:80px"></select></div>
+    <button class="blue" onclick="toggleHudConfig()" style="margin-top:15px">閉じる</button>
+</div>
+
+<div id="share-config-panel">
+    <h3 style="margin:0 0 15px 0; text-align:center; color:var(--success);">共有・同期設定</h3>
+    <div style="margin-bottom:12px;"><span style="font-size:12px;">表示名</span><input type="text" id="share-display-name" placeholder="Name" onchange="updateShareConfig()"></div>
+    <div style="margin-bottom:12px;"><span style="font-size:12px;">運用モード</span><select id="share-mode" onchange="updateShareConfig()"><option value="none">オフライン</option><option value="group">グループ共有</option></select></div>
+    <div style="margin-bottom:12px;"><span style="font-size:12px;">陣営</span><select id="share-side" onchange="updateShareConfig()"><option value="friendly">味方 (青)</option><option value="hostile">敵 (赤)</option></select></div>
+    <div style="display:flex;justify-content:space-between;margin:8px 0;"><span>リーダー設定</span><input type="checkbox" id="share-is-leader" onchange="updateShareConfig()" style="width:20px"></div>
+    <hr style="border:0; border-top:1px solid #444; margin:15px 0;">
+    <div id="share-qr-area" style="text-align:center; display:none;">
+        <div id="qrcode" style="background:white; padding:10px; display:inline-block; border-radius:8px; margin-bottom:10px;"></div>
+    </div>
+    <button class="blue" id="btn-group-create" onclick="createGroup()">新規グループ作成</button>
+    <button class="outline" onclick="toggleShareConfig()" style="margin-top:10px">閉じる</button>
+</div>
+
+<div id="panel">
+    <div id="s0" class="step active">
+        <h3 style="margin:0 0 15px 0">Map Tracker Pro</h3>
+        <button class="blue" onclick="startNewMap()">＋ 新規マップ</button>
+        <button class="outline" onclick="showMapList()">📂 保存地図</button>
+        <button class="outline" onclick="showImportScreen()">📥 インポート</button>
+    </div>
+    <div id="s2" class="step">
+        <p id="guide" style="font-weight:bold; color:var(--accent)">地点1をタップ</p>
+        <div id="p1-inputs">
+            <div class="coord-row"><input type="number" id="lat1_int" placeholder="Lat">.<input type="number" id="lat1_dec" placeholder="0000"></div>
+            <div class="coord-row"><input type="number" id="lng1_int" placeholder="Lng">.<input type="number" id="lng1_dec" placeholder="0000"></div>
+            <button onclick="confirmP1()" class="blue">P1確定</button>
+        </div>
+        <div id="p2-inputs" style="display:none">
+            <div class="coord-row"><input type="number" id="lat2_int">.<input type="number" id="lat2_dec"></div>
+            <div class="coord-row"><input type="number" id="lng2_int">.<input type="number" id="lng2_dec"></div>
+            <button onclick="confirmP2()" class="blue" style="background:var(--success)">P2確定</button>
+        </div>
+    </div>
+    <div id="s4" class="step">
+        <div id="status" style="font-size:11px; margin-bottom:5px;">GPS信号待機...</div>
+        <button id="gyro-btn" onclick="askGyro()" class="blue" style="font-size:12px; padding:8px;">🧭 方位</button>
+        <button onclick="toggleHudConfig()" class="outline" style="font-size:12px; padding:8px;">HUD</button>
+        <button onclick="exitApp()" class="outline" style="color:var(--danger); font-size:12px; padding:8px;">終了</button>
+    </div>
+    <div id="s-list" class="step">
+        <div id="map-list-container"></div>
+        <button class="outline" onclick="showStep(0)">戻る</button>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getDatabase, ref, set, onValue, serverTimestamp, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyDKPvOcJ0y79_7_oVW0KF8YR0iKcF4o_cc",
+        authDomain: "tac-map-multi.firebaseapp.com",
+        databaseURL: "https://tac-map-multi-default-rtdb.firebaseio.com",
+        projectId: "tac-map-multi",
+        storageBucket: "tac-map-multi.firebasestorage.app",
+        messagingSenderId: "530840369600",
+        appId: "1:530840369600:web:88b595c9789acd54b4b025"
+    };
+
+    const fbApp = initializeApp(firebaseConfig);
+    const db = getDatabase(fbApp);
+
+    const DB_NAME = "MapTrackerDB", STORE_NAME = "maps";
+    let idb, pointers = [], lastPoint = null, ticking = false;
+    const state = { 
+        step: 0, p1: null, p2: null, scale: 1, x: 0, y: 0, isTracking: true, rotateMode: 0, mapNorth: 0, metersPerPixel: 0,
+        userPos: {x:0, y:0}, userHeading: 0, tempPoint: null, hudOn: false, hudRadius: 20, currentImgBlob: null,
+        uid: localStorage.getItem('tac_uid') || "u_" + Math.random().toString(36).substring(2, 9),
+        groupID: null, shareMode: 'none', side: 'friendly', isLeader: false, remoteUsers: {}
+    };
+    localStorage.setItem('tac_uid', state.uid);
+
+    const el = id => document.getElementById(id);
+    const haptic = () => { if(window.navigator.vibrate) window.navigator.vibrate(10); };
+    
+    // --- v21.7 正統復元: IndexedDB Core ---
+    const initDB = () => new Promise(r => { 
+        const req = indexedDB.open(DB_NAME, 1); 
+        req.onupgradeneeded = e => { e.target.result.createObjectStore(STORE_NAME, { keyPath: "id", autoIncrement: true }); }; 
+        req.onsuccess = e => { idb = e.target.result; r(); }; 
+    });
+
+    window.saveMap = async () => {
+        const name = prompt("地図名を入力"); if(!name) return;
+        const tx = idb.transaction(STORE_NAME, "readwrite");
+        const mapData = { name, blob: state.currentImgBlob, p1: state.p1, p2: state.p2, mpp: state.metersPerPixel, north: state.mapNorth, date: new Date().toISOString() };
+        tx.objectStore(STORE_NAME).add(mapData);
+    };
+
+    window.showMapList = async () => {
+        haptic(); el('map-list-container').innerHTML = "読込中...";
+        showStep('-list');
+        const tx = idb.transaction(STORE_NAME, "readonly");
+        const list = await new Promise(r => { const req = tx.objectStore(STORE_NAME).getAll(); req.onsuccess = () => r(req.result); });
+        el('map-list-container').innerHTML = list.length ? "" : "保存された地図はありません。";
+        list.forEach(m => {
+            const div = document.createElement('div'); div.className = 'map-item';
+            div.innerHTML = `<span>${m.name}</span><button class="blue" style="width:70px; padding:8px; font-size:12px">開く</button>`;
+            div.onclick = () => loadMap(m);
+            el('map-list-container').appendChild(div);
+        });
+    };
+
+    function loadMap(m) {
+        state.p1 = m.p1; state.p2 = m.p2; state.metersPerPixel = m.mpp; state.mapNorth = m.north;
+        state.currentImgBlob = m.blob;
+        const url = URL.createObjectURL(m.blob);
+        el('map-img').src = url;
+        el('map-img').onload = () => { el('map-img').style.display='block'; showStep(4); el('ui-overlay').style.display='flex'; startGps(); };
+    }
+
+    window.showImportScreen = () => {
+        const input = document.createElement('input'); input.type = 'file'; input.accept = '.json,image/*';
+        input.onchange = e => {
+            const file = e.target.files[0]; if(!file) return;
+            if(file.type.includes('image')) {
+                state.currentImgBlob = file; el('map-img').src = URL.createObjectURL(file);
+                el('map-img').onload = () => { el('map-img').style.display='block'; showStep(2); };
+            } else {
+                const reader = new FileReader();
+                reader.onload = ev => {
+                    try { const m = JSON.parse(ev.target.result); loadMap(m); } catch(e){ alert("Invalid JSON"); }
+                };
+                reader.readAsText(file);
+            }
+        };
+        input.click();
+    };
+
+    // --- Firebase Sync ---
+    function updateShareConfig() {
+        state.shareMode = el('share-mode').value;
+        state.side = el('share-side').value;
+        state.isLeader = el('share-is-leader').checked;
+        const name = el('share-display-name').value;
+        if(name) localStorage.setItem('tac_name', name);
+        syncMyData();
+    }
+    window.updateShareConfig = updateShareConfig;
+
+    function syncMyData() {
+        if(!state.groupID || state.shareMode === 'none') return;
+        update(ref(db, 'users/' + state.uid), {
+            name: el('share-display-name').value || "Guest",
+            lat: state.lastLat || 0, lng: state.lastLng || 0,
+            groupID: state.groupID, side: state.side, isLeader: state.isLeader, lastSeen: serverTimestamp()
+        });
+    }
+
+    window.createGroup = () => {
+        haptic(); state.groupID = "G-" + Math.random().toString(36).substring(2, 7).toUpperCase();
+        el('share-mode').value = 'group'; updateShareConfig(); showQR();
+    };
+
+    function showQR() {
+        const qrContainer = el('qrcode'); qrContainer.innerHTML = "";
+        const joinUrl = window.location.origin + window.location.pathname + "?join=" + state.groupID;
+        const qrImg = document.createElement('img');
+        qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(joinUrl)}`;
+        qrContainer.appendChild(qrImg);
+        el('share-qr-area').style.display = 'block'; el('btn-group-create').style.display = 'none';
+    }
+
+    window.toggleShareConfig = () => { haptic(); const p = el('share-config-panel'); p.style.display = p.style.display==='block'?'none':'block'; if(state.groupID) showQR(); };
+
+    // --- UI Logic ---
+    window.showStep = n => { haptic(); document.querySelectorAll('.step').forEach(s=>s.classList.remove('active')); el('s'+n).classList.add('active'); state.step=n; };
+    window.toggleTracking = () => { haptic(); state.isTracking = !state.isTracking; requestRender(); };
+    window.cycleRotateMode = () => { haptic(); state.rotateMode = (state.rotateMode+1)%3; requestRender(); };
+    window.toggleHudConfig = () => { haptic(); const p = el('hud-config-panel'); p.style.display = p.style.display==='block'?'none':'block'; };
+    window.updateHudSettings = () => { state.hudOn = el('hud-enable').checked; state.hudRadius = parseInt(el('hud-radius-select').value); requestRender(); };
+    window.applySkin = v => { haptic(); document.body.className = 'theme-'+v; };
+    window.toggleSkinList = () => el('skin-enable').checked ? 'block' : 'none';
+
+    window.startNewMap = () => { 
+        const input = document.createElement('input'); input.type='file'; input.accept='image/*'; 
+        input.onchange=e=>{ 
+            state.currentImgBlob=e.target.files[0]; if(!state.currentImgBlob)return;
+            el('map-img').src = URL.createObjectURL(state.currentImgBlob); 
+            el('map-img').onload = () => { el('map-img').style.display='block'; showStep(2); }; 
+        }; input.click(); 
+    };
+
+    window.confirmP1 = () => { 
+        if(!state.tempPoint) return; 
+        state.p1={...state.tempPoint, lat:parseFloat(el('lat1_int').value+'.'+el('lat1_dec').value), lng:parseFloat(el('lng1_int').value+'.'+el('lng1_dec').value)}; 
+        el('p1-inputs').style.display='none'; el('p2-inputs').style.display='block'; el('guide').textContent="地点2をタップ";
+        el('p1-dot').style.display='block'; el('p1-dot').style.left=(state.tempPoint.x * state.scale + state.x)+'px'; el('p1-dot').style.top=(state.tempPoint.y * state.scale + state.y)+'px';
+        requestRender();
+    };
+
+    window.confirmP2 = () => { 
+        if(!state.tempPoint) return; 
+        state.p2={...state.tempPoint, lat:parseFloat(el('lat2_int').value+'.'+el('lat2_dec').value), lng:parseFloat(el('lng2_int').value+'.'+el('lng2_dec').value)}; 
+        const r=Math.PI/180; state.metersPerPixel = (6371000 * Math.acos(Math.sin(state.p1.lat*r)*Math.sin(state.p2.lat*r)+Math.cos(state.p1.lat*r)*Math.cos(state.p2.lat*r)*Math.cos((state.p2.lng-state.p1.lng)*r))) / Math.hypot(state.p2.x-state.p1.x, state.p2.y-state.p1.y);
+        state.mapNorth = (Math.atan2(state.p2.x-state.p1.x, state.p1.y-state.p2.y)*180/Math.PI) - (Math.atan2(state.p2.lng-state.p1.lng, state.p2.lat-state.p1.lat)*180/Math.PI);
+        saveMap(); showStep(4); el('ui-overlay').style.display='flex'; startGps(); 
+    };
+
+    function startGps() { navigator.geolocation.watchPosition(p=>{ state.lastLat=p.coords.latitude; state.lastLng=p.coords.longitude; state.userPos={x:state.p1.x+(p.coords.longitude-state.p1.lng)/(state.p2.lng-state.p1.lng)*(state.p2.x-state.p1.x), y:state.p1.y+(p.coords.latitude-state.p1.lat)/(state.p2.lat-state.p1.lat)*(state.p2.y-state.p1.y)}; el('status').textContent=`GPS ±${Math.round(p.coords.accuracy)}m`; syncMyData(); requestRender(); }, null, {enableHighAccuracy:true}); }
+
+    function requestRender() { if(!ticking) { window.requestAnimationFrame(() => { render(); ticking = false; }); ticking = true; } }
+    function render() {
+        const vw = el('viewport').clientWidth, vh = el('viewport').clientHeight;
+        const rot = (state.rotateMode === 1) ? -state.mapNorth : (state.rotateMode === 2) ? -state.mapNorth - state.userHeading : 0;
+        const rad = rot * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad), sx = vw / 2, sy = (state.rotateMode === 2) ? vh * 0.7 : vh / 2;
+        
+        if(state.isTracking && state.userPos.x){ state.x = sx - (state.userPos.x * state.scale * cos - state.userPos.y * state.scale * sin); state.y = sy - (state.userPos.x * state.scale * sin + state.userPos.y * state.scale * cos); } 
+        el('map-container').style.transform = `translate(${state.x}px, ${state.y}px) rotate(${rot}deg) scale(${state.scale})`;
+        
+        const sLayer = el('share-layer'); sLayer.innerHTML = '';
+        Object.keys(state.remoteUsers).forEach(uid => {
+            if(uid === state.uid) return;
+            const u = state.remoteUsers[uid]; if(u.groupID !== state.groupID || state.shareMode==='none') return;
+            const ux = state.p1.x + (u.lng - state.p1.lng) / (state.p2.lng - state.p1.lng) * (state.p2.x - state.p1.x);
+            const uy = state.p1.y + (u.lat - state.p1.lat) / (state.p2.lat - state.p1.lat) * (state.p2.y - state.p1.y);
+            const tx = state.x + (ux * state.scale * cos - uy * state.scale * sin), ty = state.y + (ux * state.scale * sin + uy * state.scale * cos);
+            const col = u.side === 'hostile' ? 'var(--danger)' : 'var(--accent)';
+            sLayer.innerHTML += `<div class="share-marker" style="left:${tx}px; top:${ty}px; background:${col}"></div><div class="share-label" style="left:${tx}px; top:${ty}px; color:${col}">${u.name}</div>`;
+        });
+
+        if(state.userPos.x){
+            const ux = state.x + (state.userPos.x * state.scale * cos - state.userPos.y * state.scale * sin), uy = state.y + (state.userPos.x * state.scale * sin + state.userPos.y * state.scale * cos);
+            el('user-container').style.left = ux + 'px'; el('user-container').style.top = uy + 'px'; el('user-container').style.display = 'block';
+            el('user-dot-wrapper').style.transform = `translate(-50%, -50%) rotate(${state.userHeading + state.mapNorth + rot}deg)`;
+            el('hud-circle').setAttribute('r', state.hudOn ? (state.hudRadius / state.metersPerPixel) * state.scale : 0);
+        }
+        
+        if(state.p1) { el('p1-dot').style.left=(state.x + (state.p1.x * state.scale * cos - state.p1.y * state.scale * sin))+'px'; el('p1-dot').style.top=(state.y + (state.p1.x * state.scale * sin + state.p1.y * state.scale * cos))+'px'; }
+        if(state.p2) { el('p2-dot').style.left=(state.x + (state.p2.x * state.scale * cos - state.p2.y * state.scale * sin))+'px'; el('p2-dot').style.top=(state.y + (state.p2.x * state.scale * sin + state.p2.y * state.scale * cos))+'px'; }
+
+        el('btn-lock').style.borderColor = state.isTracking ? 'var(--accent)' : 'rgba(255,255,255,0.2)';
+    }
+
+    // Pointer Handler
+    el('viewport').onpointerdown = e => { pointers.push(e); if(pointers.length===1) lastPoint={x:e.clientX, y:e.clientY}; };
+    el('viewport').onpointermove = e => { 
+        const i=pointers.findIndex(p=>p.pointerId===e.pointerId); if(i===-1)return; pointers[i]=e;
+        if(pointers.length===1){ state.x+=e.clientX-lastPoint.x; state.y+=e.clientY-lastPoint.y; lastPoint={x:e.clientX, y:e.clientY}; state.isTracking=false; requestRender(); }
+    };
+    el('viewport').onpointerup = e => { 
+        if(pointers.length===1 && state.step===2) { 
+            state.tempPoint={x:(e.clientX-state.x)/state.scale, y:(e.clientY-state.y)/state.scale}; 
+            el('temp-target-dot').style.display='block'; el('temp-target-dot').style.left=e.clientX+'px'; el('temp-target-dot').style.top=e.clientY+'px';
+        }
+        pointers=pointers.filter(p=>p.pointerId!==e.pointerId); 
+    };
+
+    window.askGyro = async () => { if(typeof DeviceOrientationEvent.requestPermission === 'function'){ await DeviceOrientationEvent.requestPermission(); } window.addEventListener('deviceorientation', e => { state.userHeading = e.webkitCompassHeading || 360-e.alpha; requestRender(); }, true); el('gyro-btn').style.display='none'; };
+    window.exitApp = () => location.reload();
+
+    window.onload = async () => { 
+        await initDB(); 
+        const params = new URLSearchParams(window.location.search);
+        if(params.get('join')) { state.groupID = params.get('join'); state.shareMode = 'group'; el('share-mode').value = 'group'; }
+        const savedName = localStorage.getItem('tac_name'); if(savedName) el('share-display-name').value = savedName;
+        onValue(ref(db, 'users/'), snap => { state.remoteUsers = snap.val() || {}; requestRender(); });
+        for(let r=5; r<=50; r+=5){ const opt=document.createElement('option'); opt.value=r; opt.textContent=r; if(r===20)opt.selected=true; el('hud-radius-select').appendChild(opt); }
+    };
+</script>
+</body>
+</html>
