@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>Map Tracker</title>
+    <style>
+        :root { 
+            --bg: #0f172a; --panel-bg: rgba(30, 41, 59, 0.9); --accent: #3b82f6; 
+            --success: #10b981; --danger: #ef4444; --text: #f8fafc;
+            --glass: rgba(15, 23, 42, 0.6); --glass-border: rgba(255, 255, 255, 0.2);
+        }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; overflow: hidden; height: 100dvh; width: 100%; position: fixed; }
+        #viewport { position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden; touch-action: none; }
+        #map-container { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
+        #map-img { display: none; pointer-events: none; }
+        
+        /* 右側UIボタン群 */
+        #ui-overlay { position: fixed; top: 44px; right: 15px; display: none; flex-direction: column; gap: 12px; z-index: 1002; }
+        .ui-btn { width: 50px; height: 50px; background: var(--panel-bg); color: var(--text); border-radius: 12px; border: 1px solid var(--glass-border); display: flex; align-items: center; justify-content: center; font-size: 24px; backdrop-filter: blur(10px); }
+        .ui-btn-large { height: 110px; font-size: 28px; } /* 高さ2倍の共有ボタン */
+
+        /* 共有設定BOX */
+        #share-config-box { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 280px; background: var(--panel-bg); padding: 20px; border-radius: 20px; border: 2px solid var(--accent); z-index: 4000; backdrop-filter: blur(15px); }
+
+        .dot { position: absolute; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff; transform: translate(-50%, -50%); display: none; z-index: 1000; }
+        #user-container { position: absolute; pointer-events: none; display: none; z-index: 1100; }
+        #user-dot { width: 0; height: 0; border-left: 10px solid transparent; border-right: 10px solid transparent; border-bottom: 24px solid var(--accent); position: absolute; transform: translate(-50%, -70%); }
+
+        #panel { position: fixed; bottom: 20px; left: 15px; right: 15px; padding: 15px; background: var(--panel-bg); backdrop-filter: blur(15px); border-radius: 20px; z-index: 2000; border: 1px solid rgba(255,255,255,0.1); }
+        .step { display: none; } .active { display: block; }
+        button { width: 100%; padding: 14px; margin: 5px 0; border-radius: 12px; border: none; font-weight: bold; font-size: 16px; }
+        input { width: 100%; padding: 10px; margin: 5px 0; border-radius: 8px; border: 1px solid #444; background: #1a1a1a; color: white; box-sizing: border-box; }
+        
+        #scale-bar-container { position: fixed; bottom: 116px; right: 15px; z-index: 1200; pointer-events: none; display: none; flex-direction: column; align-items: center; background: var(--glass); padding: 8px; border-radius: 12px; width: 110px; }
+        #scale-bar { height: 4px; width: 100px; background: linear-gradient(90deg, #fff 50%, #000 50%); background-size: 20px 100%; border: 1px solid #fff; }
+
+        @media (orientation: landscape) {
+            #ui-overlay { top: 15px; right: 15px; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="viewport">
+    <div id="map-container"><img id="map-img"></div>
+    <div id="p1-dot" class="dot"></div><div id="p2-dot" class="dot"></div>
+    <div id="user-container"><div id="user-dot"></div></div>
+</div>
+
+<div id="ui-overlay">
+    <div id="btn-lock" class="ui-btn" onclick="toggleTracking()">🎯</div>
+    <div id="btn-rotate" class="ui-btn" onclick="cycleRotateMode()">🧭</div>
+    <div id="btn-share" class="ui-btn ui-btn-large" onclick="toggleShareBox()">📡</div>
+</div>
+
+<div id="share-config-box">
+    <h3 style="margin:0 0 15px 0; text-align:center;">共有設定</h3>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+        <span>位置共有有効化</span>
+        <input type="checkbox" id="share-enable" style="width:24px; height:24px;">
+    </div>
+    <button onclick="toggleShareBox()" style="background:var(--accent); color:white;">閉じる</button>
+</div>
+
+<div id="scale-bar-container"><div id="scale-label" style="font-size:12px; color:white;">---m</div><div id="scale-bar"></div></div>
+
+<div id="panel">
+    <div id="s0" class="step active">
+        <button onclick="startNewMap()" style="background:var(--accent); color:white;">＋ 新規マップ</button>
+    </div>
+    
+    <div id="s2" class="step">
+        <p id="guide" style="margin:0 0 5px 0; font-weight:bold;">地点1をタップ</p>
+        <div id="p1-inputs">
+            <div style="display:flex;gap:4px;"><input type="number" id="lat1_int" placeholder="35">.<input type="number" id="lat1_dec" placeholder="0000"></div>
+            <div style="display:flex;gap:4px;"><input type="number" id="lng1_int" placeholder="135">.<input type="number" id="lng1_dec" placeholder="0000"></div>
+            <button onclick="confirmP1()" style="background:var(--danger); color:white;">P1登録</button>
+        </div>
+        <div id="p2-inputs" style="display:none">
+            <div style="display:flex;gap:4px;"><input type="number" id="lat2_int" placeholder="35">.<input type="number" id="lat2_dec" placeholder="0000"></div>
+            <div style="display:flex;gap:4px;"><input type="number" id="lng2_int" placeholder="135">.<input type="number" id="lng2_dec" placeholder="0000"></div>
+            <button onclick="confirmP2()" style="background:var(--success); color:white;">P2登録</button>
+        </div>
+    </div>
+
+    <div id="s4" class="step">
+        <div id="status" style="font-size:12px; margin-bottom:10px;">GPS待機中...</div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+            <button id="gyro-btn" onclick="askGyro()" style="background:var(--accent); color:white; margin:0;">🧭 方位許可</button>
+            <button onclick="location.reload()" style="background:var(--danger); color:white; margin:0;">終了</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let pointers = [], lastDist = 0, lastPoint = null, ticking = false; 
+    const state = { 
+        step: 0, p1: null, p2: null, scale: 1, x: 0, y: 0, isTracking: true, rotateMode: 0, mapNorth: 0, metersPerPixel: 0,
+        userPos: {x:0, y:0}, userHeading: 0, tempPoint: null
+    };
+
+    const el = id => document.getElementById(id);
+    function haptic() { if (window.navigator.vibrate) window.navigator.vibrate(10); }
+    function showStep(n){ haptic(); document.querySelectorAll('.step').forEach(s=>s.classList.remove('active')); el('s'+n).classList.add('active'); state.step=n; }
+
+    function toggleShareBox() { haptic(); const box = el('share-config-box'); box.style.display = box.style.display === 'block' ? 'none' : 'block'; }
+
+    function startNewMap() { 
+        const input = document.createElement('input'); input.type='file'; input.accept='image/*'; 
+        input.onchange=e=>{ 
+            const file=e.target.files[0]; if(!file) return;
+            const img = el('map-img'); img.src = URL.createObjectURL(file); 
+            img.onload = () => { img.style.display='block'; fitImage(); showStep(2); }; 
+        }; 
+        input.click(); 
+    }
+
+    function fitImage() {
+        const img = el('map-img'), vw = window.innerWidth, vh = window.innerHeight;
+        state.scale = Math.min(vw/img.naturalWidth, vh/img.naturalHeight)*0.8;
+        state.x = vw/2 - (img.naturalWidth/2*state.scale); state.y = vh/2 - (img.naturalHeight/2*state.scale);
+        requestRender();
+    }
+
+    function requestRender() { if(!ticking) { window.requestAnimationFrame(() => { render(); ticking = false; }); ticking = true; } }
+
+    function render() {
+        const vw = window.innerWidth, vh = window.innerHeight;
+        const rot = (state.rotateMode === 1) ? -state.mapNorth : (state.rotateMode === 2) ? -state.mapNorth - state.userHeading : 0;
+        const rad = rot * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+        const sx = vw / 2, sy = (state.rotateMode === 2) ? vh * 0.7 : vh / 2;
+        
+        if(state.isTracking && state.userPos.x){ 
+            state.x = sx - (state.userPos.x * state.scale * cos - state.userPos.y * state.scale * sin); 
+            state.y = sy - (state.userPos.x * state.scale * sin + state.userPos.y * state.scale * cos); 
+        } 
+        el('map-container').style.transform = `translate(${state.x}px, ${state.y}px) rotate(${rot}deg) scale(${state.scale})`;
+        
+        if(state.metersPerPixel) {
+            el('scale-bar-container').style.display = 'flex';
+            const m100px = 100 * (state.metersPerPixel / state.scale);
+            el('scale-label').innerText = Math.round(m100px)+"m";
+        }
+
+        const draw = (id, p, color) => {
+            const d = el(id); if(!p) { d.style.display='none'; return; }
+            const tx = state.x + (p.x * state.scale * cos - p.y * state.scale * sin), ty = state.y + (p.x * state.scale * sin + p.y * state.scale * cos);
+            d.style.left = tx+'px'; d.style.top = ty+'px'; d.style.backgroundColor = color; d.style.display = 'block';
+        };
+        draw('p1-dot', state.p1 || (state.step===2 && !state.p2 ? state.tempPoint : null), '#f00');
+        draw('p2-dot', state.p1 ? (state.p2 || state.tempPoint) : null, '#0f0');
+
+        if(state.userPos.x){
+            const ux = state.x + (state.userPos.x * state.scale * cos - state.userPos.y * state.scale * sin);
+            const uy = state.y + (state.userPos.x * state.scale * sin + state.userPos.y * state.scale * cos);
+            el('user-container').style.left = ux+'px'; el('user-container').style.top = uy+'px'; el('user-container').style.display = 'block';
+            el('user-dot').style.transform = `translate(-50%, -50%) rotate(${state.userHeading + state.mapNorth + rot}deg)`;
+        }
+        el('btn-lock').style.borderColor = state.isTracking ? 'var(--accent)' : 'rgba(255,255,255,0.2)';
+    }
+
+    el('viewport').addEventListener('pointerdown', e => { 
+        pointers.push(e); if(pointers.length===1) lastPoint = {x:e.clientX, y:e.clientY}; 
+        else if(pointers.length===2) lastDist = Math.hypot(pointers[0].clientX-pointers[1].clientX, pointers[0].clientY-pointers[1].clientY);
+    });
+    el('viewport').addEventListener('pointermove', e => {
+        const i = pointers.findIndex(p=>p.pointerId===e.pointerId); if(i===-1) return; pointers[i]=e;
+        if(pointers.length===1 && lastPoint){ state.x += e.clientX-lastPoint.x; state.y += e.clientY-lastPoint.y; lastPoint={x:e.clientX, y:e.clientY}; state.isTracking=false; }
+        else if(pointers.length===2){
+            const dist = Math.hypot(pointers[0].clientX-pointers[1].clientX, pointers[0].clientY-pointers[1].clientY), zoom = dist/lastDist;
+            const midX = (pointers[0].clientX+pointers[1].clientX)/2, midY = (pointers[0].clientY+pointers[1].clientY)/2;
+            state.scale *= zoom; state.x = midX-(midX-state.x)*zoom; state.y = midY-(midY-state.y)*zoom; lastDist=dist; state.isTracking=false;
+        }
+        requestRender();
+    });
+    window.addEventListener('pointerup', e => { 
+        if(pointers.length===1 && state.step===2) handleTap(e);
+        pointers = pointers.filter(p=>p.pointerId!==e.pointerId); lastDist=0; lastPoint=null; 
+    });
+
+    function handleTap(e) {
+        const vw = window.innerWidth, vh = window.innerHeight, rot = (state.rotateMode === 1) ? -state.mapNorth : (state.rotateMode === 2) ? -state.mapNorth - state.userHeading : 0;
+        const rad = -rot * Math.PI / 180, sx = vw / 2, sy = (state.rotateMode === 2) ? vh * 0.7 : vh / 2;
+        const dx = e.clientX - sx, dy = e.clientY - sy, rx = dx * Math.cos(rad) - dy * Math.sin(rad), ry = dx * Math.sin(rad) + dy * Math.cos(rad);
+        state.tempPoint = { x: (rx + sx - state.x) / state.scale, y: (ry + sy - state.y) / state.scale };
+        requestRender();
+    }
+
+    function confirmP1() { haptic(); const lat=parseFloat(el('lat1_int').value+'.'+el('lat1_dec').value), lng=parseFloat(el('lng1_int').value+'.'+el('lng1_dec').value); if(!state.tempPoint) return; state.p1={...state.tempPoint, lat, lng}; state.tempPoint=null; el('p1-inputs').style.display='none'; el('p2-inputs').style.display='block'; el('guide').innerText="地点2をタップ"; requestRender(); }
+    function confirmP2() { haptic(); const lat=parseFloat(el('lat2_int').value+'.'+el('lat2_dec').value), lng=parseFloat(el('lng2_int').value+'.'+el('lng2_dec').value); if(!state.tempPoint) return; state.p2={...state.tempPoint, lat, lng}; const p1=state.p1, p2=state.p2, r=Math.PI/180; state.metersPerPixel = (6371000 * Math.acos(Math.sin(p1.lat*r)*Math.sin(p2.lat*r)+Math.cos(p1.lat*r)*Math.cos(p2.lat*r)*Math.cos((p2.lng-p1.lng)*r))) / Math.hypot(p2.x-p1.x, p2.y-p1.y); state.mapNorth = (Math.atan2(p2.x-p1.x, p1.y-p2.y)*180/Math.PI) - (Math.atan2(p2.lng-p1.lng, p2.lat-p1.lat)*180/Math.PI); saveAndStart(); }
+
+    function saveAndStart() { showStep(4); el('ui-overlay').style.display='flex'; navigator.geolocation.watchPosition(p=>{ state.userPos={x:state.p1.x+(p.coords.longitude-state.p1.lng)/(state.p2.lng-state.p1.lng)*(state.p2.x-state.p1.x), y:state.p1.y+(p.coords.latitude-state.p1.lat)/(state.p2.lat-state.p1.lat)*(state.p2.y-state.p1.y)}; el('status').innerText=`精度: ±${Math.round(p.coords.accuracy)}m`; requestRender(); }, null, {enableHighAccuracy:true}); }
+
+    function toggleTracking(){ haptic(); state.isTracking=!state.isTracking; requestRender(); }
+    function cycleRotateMode(){ haptic(); state.rotateMode=(state.rotateMode+1)%3; requestRender(); }
+    async function askGyro(){ if(typeof DeviceOrientationEvent.requestPermission==='function'){ const res=await DeviceOrientationEvent.requestPermission(); if(res==='granted') window.addEventListener('deviceorientation', e=> { state.userHeading=e.webkitCompassHeading; requestRender(); }); } el('gyro-btn').style.display='none'; }
+</script>
+</body>
+</html>
