@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Map Tracker Pro v30.2 Ultra [v28-Core]</title>
+    <style>
+        :root { 
+            --bg: #020617; --panel-bg: rgba(15, 23, 42, 0.9); --accent: #3b82f6; 
+            --success: #10b981; --danger: #ef4444; --text: #f8fafc;
+            --glass: rgba(30, 41, 59, 0.7); --glass-border: rgba(255, 255, 255, 0.15);
+            --btn-bg: rgba(255, 255, 255, 0.05);
+        }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; height: 100dvh; width: 100%; position: fixed; overscroll-behavior: none; }
+        
+        /* Viewport & Layers */
+        #viewport { position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden; touch-action: none; -webkit-user-select: none; }
+        #map-container { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; z-index: 1; }
+        #map-img { display: none; pointer-events: none; vertical-align: top; }
+        
+        /* HUD Indicators */
+        #hud-info-list { position: absolute; top: 50px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 2px; padding: 6px 12px; border-radius: 12px; background: var(--glass); backdrop-filter: blur(10px); border: 1px solid var(--glass-border); pointer-events: none; z-index: 1500; min-width: 140px; }
+        .hud-row { font-size: 11px; font-weight: 900; text-shadow: 1px 1px 2px #000; font-family: 'SF Mono', 'Roboto Mono', monospace; white-space: nowrap; display: flex; justify-content: space-between; }
+        .hud-val { color: var(--accent); margin-left: 8px; }
+
+        /* Markers & Cursors */
+        .target-marker { position: absolute; font-weight: bold; font-size: 16px; z-index: 1005; pointer-events: none; display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 10px; background: var(--glass); backdrop-filter: blur(4px); border: 2px solid var(--accent); transform: translate(-50%, -50%); box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+        #user-container { position: absolute; pointer-events: none; display: none; z-index: 1100; transition: transform 0.2s cubic-bezier(0.17, 0.67, 0.83, 0.67); }
+        #user-dot { width: 0; height: 0; border-left: 12px solid transparent; border-right: 12px solid transparent; border-bottom: 28px solid var(--accent); position: absolute; top: 50%; left: 50%; transform: translate(-50%, -75%); filter: drop-shadow(0 2px 4px rgba(0,0,0,0.8)); }
+        .cursor-other { position: absolute; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; background: var(--success); transform: translate(-50%, -50%); z-index: 1050; box-shadow: 0 0 10px var(--success); }
+
+        /* Scale Bar */
+        #scale-bar-container { position: fixed; bottom: 130px; right: 20px; z-index: 1200; pointer-events: none; display: none; flex-direction: column; align-items: center; background: var(--glass); padding: 8px; border-radius: 10px; border: 1px solid var(--glass-border); }
+        #scale-label { font-size: 11px; font-weight: 900; margin-bottom: 4px; font-family: monospace; letter-spacing: 1px; }
+        #scale-bar { height: 4px; background: linear-gradient(90deg, #fff 50%, #000 50%); background-size: 20px 100%; border: 1px solid #fff; border-radius: 2px; }
+
+        /* Control Panel */
+        #panel { position: fixed; bottom: 25px; left: 15px; right: 15px; padding: 18px; background: var(--panel-bg); backdrop-filter: blur(20px); border-radius: 24px; z-index: 2000; border: 1px solid var(--glass-border); box-shadow: 0 -10px 40px rgba(0,0,0,0.4); }
+        .step { display: none; } .active { display: block; }
+        button { width: 100%; padding: 16px; margin: 6px 0; border-radius: 14px; border: none; font-weight: 800; font-size: 16px; transition: all 0.1s; letter-spacing: 0.5px; }
+        button:active { transform: scale(0.97); opacity: 0.9; }
+        .blue { background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4); }
+        .outline { background: var(--btn-bg); border: 1px solid rgba(255,255,255,0.2); color: var(--text); }
+        .danger-btn { background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); color: var(--danger); }
+        
+        /* High Precision Input Cells */
+        .coord-group { background: rgba(0,0,0,0.2); padding: 12px; border-radius: 12px; margin-bottom: 12px; border: 1px solid var(--glass-border); }
+        .coord-label { font-size: 10px; color: #94a3b8; font-weight: bold; margin-bottom: 6px; display: block; text-transform: uppercase; }
+        .coord-row { display: flex; align-items: center; gap: 6px; }
+        .coord-row input { flex: 1; padding: 14px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: white; text-align: center; font-size: 20px; font-family: 'SF Mono', monospace; font-weight: bold; }
+        .coord-row input:focus { border-color: var(--accent); outline: none; background: #1e293b; }
+        .dot-sep { font-size: 28px; font-weight: bold; color: var(--accent); }
+
+        /* UI Overlays & Sharing */
+        #ui-overlay { position: fixed; top: 50px; right: 15px; display: none; flex-direction: column; gap: 14px; z-index: 1002; }
+        .ui-btn { width: 54px; height: 54px; background: var(--panel-bg); color: var(--text); border-radius: 16px; border: 1px solid var(--glass-border); display: flex; align-items: center; justify-content: center; font-size: 24px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        #btn-share { height: 75px !important; flex-direction: column; font-size: 20px; position: relative; } /* Corrected 75% height */
+        #btn-share span { font-size: 9px; font-weight: 900; margin-top: 4px; line-height: 1; color: #94a3b8; }
+        #sync-indicator { width: 8px; height: 8px; background: var(--danger); border-radius: 50%; position: absolute; top: 8px; right: 8px; }
+        
+        /* Map List */
+        .map-item { padding: 14px; background: var(--btn-bg); margin-bottom: 8px; border-radius: 10px; border: 1px solid var(--glass-border); display: flex; justify-content: space-between; align-items: center; }
+    </style>
+</head>
+<body>
+
+<div id="viewport">
+    <div id="map-container"><img id="map-img"></div>
+    <div id="target-layer"></div>
+    <div id="other-cursors-layer"></div>
+    <div id="user-container">
+        <div id="user-dot"></div>
+    </div>
+</div>
+
+<div id="hud-info-list" style="display:none;">
+    <div class="hud-row">LAT <span id="hud-lat" class="hud-val">0.000000</span></div>
+    <div class="hud-row">LNG <span id="hud-lng" class="hud-val">0.000000</span></div>
+    <div class="hud-row">DST <span id="hud-dst" class="hud-val">---m</span></div>
+</div>
+
+<div id="scale-bar-container"><div id="scale-label">---m</div><div id="scale-bar"></div></div>
+
+<div id="ui-overlay">
+    <div class="ui-btn" id="lock-btn" onclick="toggleTracking()">🎯</div>
+    <div id="btn-share" class="ui-btn" onclick="toggleSharing()">📡<div id="sync-indicator"></div><span>SHARE</span></div>
+    <div class="ui-btn" onclick="addCustomMarker()">📍</div>
+</div>
+
+<div id="panel">
+    <!-- Step 0: Main -->
+    <div id="s0" class="step active">
+        <h2 style="margin:0 0 15px 0; font-size: 20px; font-weight: 900; background: linear-gradient(90deg, #fff, #3b82f6); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">MAP TRACKER ULTRA</h2>
+        <button class="blue" onclick="initNewProject()">＋ CREATE NEW PROJECT</button>
+        <button class="outline" onclick="showSavedList()">📂 PROJECT ARCHIVE</button>
+    </div>
+
+    <!-- Step 1: Project Name -->
+    <div id="s1" class="step">
+        <p style="font-weight:bold; margin-bottom:12px;">プロジェクト名を入力してください</p>
+        <input type="text" id="project-name" placeholder="例: Camp Site A" style="width:100%; padding:14px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:white; font-size:16px; margin-bottom:15px; box-sizing:border-box;">
+        <button class="blue" onclick="pickMapImage()">画像を選択して次へ</button>
+        <button class="outline" onclick="showStep(0)">戻る</button>
+    </div>
+
+    <!-- Step 2: Calibration -->
+    <div id="s2" class="step">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <p id="guide" style="font-weight:900; font-size:14px; color:var(--accent); margin:0;">POINT 1 登録</p>
+            <span style="font-size:10px; background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px;">P1地点をタップ</span>
+        </div>
+        
+        <div id="p1-inputs">
+            <div class="coord-group">
+                <span class="coord-label">Latitude (緯度)</span>
+                <div class="coord-row">
+                    <input type="number" id="lat1_int" placeholder="35" inputmode="decimal">
+                    <span class="dot-sep">.</span>
+                    <input type="number" id="lat1_dec" placeholder="000000" inputmode="decimal">
+                </div>
+            </div>
+            <div class="coord-group">
+                <span class="coord-label">Longitude (経度)</span>
+                <div class="coord-row">
+                    <input type="number" id="lng1_int" placeholder="135" inputmode="decimal">
+                    <span class="dot-sep">.</span>
+                    <input type="number" id="lng1_dec" placeholder="000000" inputmode="decimal">
+                </div>
+            </div>
+            <button class="blue" onclick="confirmP1()">P1 確定</button>
+        </div>
+
+        <div id="p2-inputs" style="display:none">
+            <div class="coord-group">
+                <span class="coord-label">Latitude (緯度)</span>
+                <div class="coord-row">
+                    <input type="number" id="lat2_int" placeholder="35" inputmode="decimal">
+                    <span class="dot-sep">.</span>
+                    <input type="number" id="lat2_dec" placeholder="000000" inputmode="decimal">
+                </div>
+            </div>
+            <div class="coord-group">
+                <span class="coord-label">Longitude (経度)</span>
+                <div class="coord-row">
+                    <input type="number" id="lng2_int" placeholder="135" inputmode="decimal">
+                    <span class="dot-sep">.</span>
+                    <input type="number" id="lng2_dec" placeholder="000000" inputmode="decimal">
+                </div>
+            </div>
+            <button class="blue" onclick="confirmP2()" style="background:var(--success)">P2 確定 & システム構築</button>
+        </div>
+    </div>
+
+    <!-- Step 3: Archive List -->
+    <div id="s3" class="step">
+        <p style="font-weight:bold; margin-bottom:12px;">保存済みプロジェクト</p>
+        <div id="map-list-container" style="max-height:300px; overflow-y:auto; margin-bottom:15px;"></div>
+        <button class="outline" onclick="showStep(0)">トップに戻る</button>
+    </div>
+
+    <!-- Step 4: Tracking & Live Data -->
+    <div id="s4" class="step">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+                <div id="project-display-name" style="font-size:12px; font-weight:bold; color:var(--accent);">NO PROJECT</div>
+                <div id="gps-accuracy" style="font-size:10px; color:#94a3b8;">Accuracy: ---m</div>
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button class="outline" onclick="resetView()" style="width:auto; padding:8px 12px; margin:0; font-size:12px;">CENTER</button>
+                <button class="danger-btn" onclick="location.reload()" style="width:auto; padding:8px 12px; margin:0; font-size:12px;">EXIT</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    // Firebase Core Integration (v30.2 Config)
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getDatabase, ref, set, onValue, update, onDisconnect } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyDKPvOcJ0y79_7_oVW0KF8YR0iKcF4o_cc",
+        authDomain: "tac-map-multi.firebaseapp.com",
+        databaseURL: "https://tac-map-multi-default-rtdb.firebaseio.com",
+        projectId: "tac-map-multi",
+        storageBucket: "tac-map-multi.firebasestorage.app",
+        messagingSenderId: "530840369600",
+        appId: "1:530840369600:web:88b595c9789acd54b4b025"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    
+    // Global Reference for Non-Module Scripts
+    window.fb = { db, ref, set, onValue, update, onDisconnect };
+</script>
+
+<script>
+    // --- State Management ---
+    const state = {
+        step: 0,
+        projectName: "Default",
+        p1: null, p2: null,
+        scale: 1, x: 0, y: 0,
+        isTracking: true,
+        lastRot: 0,
+        userPos: { lat: 0, lng: 0, x: 0, y: 0, heading: 0 },
+        mPerPx: 0,
+        mapNorthRad: 0,
+        isSyncing: false,
+        userId: 'user_' + Math.floor(Math.random() * 10000),
+        markers: []
+    };
+
+    // --- DOM Elements ---
+    const nodes = {
+        viewport: document.getElementById('viewport'),
+        container: document.getElementById('map-container'),
+        img: document.getElementById('map-img'),
+        user: document.getElementById('user-container'),
+        hud: document.getElementById('hud-info-list'),
+        scale: document.getElementById('scale-bar-container')
+    };
+
+    // --- Core Logic: v28 Swipe & Interaction ---
+    let pointers = [];
+    let lastDist = 0;
+    let lastMid = null;
+
+    nodes.viewport.addEventListener('pointerdown', e => {
+        nodes.viewport.setPointerCapture(e.pointerId);
+        pointers.push(e);
+        if(pointers.length === 1) lastMid = { x: e.clientX, y: e.clientY };
+    });
+
+    nodes.viewport.addEventListener('pointermove', e => {
+        const idx = pointers.findIndex(p => p.pointerId === e.pointerId);
+        if(idx === -1) return;
+        pointers[idx] = e;
+
+        if(pointers.length === 1 && lastMid) {
+            const dx = e.clientX - lastMid.x;
+            const dy = e.clientY - lastMid.y;
+            
+            // v28 Standard: Directional consistency with rotation
+            const rad = state.lastRot * Math.PI / 180;
+            const cos = Math.cos(rad);
+            const sin = Math.sin(rad);
+
+            state.x += dx * cos + dy * sin;
+            state.y += -dx * sin + dy * cos;
+
+            lastMid = { x: e.clientX, y: e.clientY };
+            if(Math.hypot(dx, dy) > 5) setTracking(false);
+        } 
+        else if(pointers.length === 2) {
+            const p1 = pointers[0];
+            const p2 = pointers[1];
+            const dist = Math.hypot(p1.clientX - p2.clientX, p1.clientY - p2.clientY);
+            const mid = { x: (p1.clientX + p2.clientX)/2, y: (p1.clientY + p2.clientY)/2 };
+
+            if(lastDist > 0) {
+                const zoom = dist / lastDist;
+                state.scale *= zoom;
+                state.x = mid.x - (mid.x - state.x) * zoom;
+                state.y = mid.y - (mid.y - state.y) * zoom;
+            }
+            lastDist = dist;
+            setTracking(false);
+        }
+    });
+
+    nodes.viewport.addEventListener('pointerup', e => {
+        pointers = pointers.filter(p => p.pointerId !== e.pointerId);
+        if(pointers.length < 2) lastDist = 0;
+        if(pointers.length === 0) lastMid = null;
+    });
+
+    // --- UI & Project Setup ---
+    function showStep(n) {
+        document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+        document.getElementById('s' + n).classList.add('active');
+        state.step = n;
+        if(n === 4) {
+            document.getElementById('ui-overlay').style.display = 'flex';
+            nodes.hud.style.display = 'flex';
+            nodes.scale.style.display = 'flex';
+        }
+    }
+
+    function initNewProject() {
+        showStep(1);
+    }
+
+    function pickMapImage() {
+        state.projectName = document.getElementById('project-name').value || "Unnamed Map";
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.onchange = e => {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = f => {
+                nodes.img.src = f.target.result;
+                nodes.img.onload = () => {
+                    nodes.img.style.display = 'block';
+                    document.getElementById('project-display-name').innerText = state.projectName;
+                    showStep(2);
+                };
+            };
+            reader.readAsDataURL(file);
+        };
+        input.click();
+    }
+
+    // --- Calibration ---
+    function confirmP1() {
+        const lat = parseFloat(document.getElementById('lat1_int').value + "." + document.getElementById('lat1_dec').value);
+        const lng = parseFloat(document.getElementById('lng1_int').value + "." + document.getElementById('lng1_dec').value);
+        if(isNaN(lat) || isNaN(lng)) return alert("有効な座標を入力してください");
+        
+        state.p1 = { px: -state.x / state.scale, py: -state.y / state.scale, lat, lng };
+        document.getElementById('p1-inputs').style.display = 'none';
+        document.getElementById('p2-inputs').style.display = 'block';
+        document.getElementById('guide').innerText = "POINT 2 登録";
+        haptic();
+    }
+
+    function confirmP2() {
+        const lat = parseFloat(document.getElementById('lat2_int').value + "." + document.getElementById('lat2_dec').value);
+        const lng = parseFloat(document.getElementById('lng2_int').value + "." + document.getElementById('lng2_dec').value);
+        if(isNaN(lat) || isNaN(lng)) return alert("有効な座標を入力してください");
+        
+        state.p2 = { px: -state.x / state.scale, py: -state.y / state.scale, lat, lng };
+        buildMappingSystem();
+        saveProject();
+        startTrackingProcess();
+        showStep(4);
+        haptic();
+    }
+
+    function buildMappingSystem() {
+        const dx = state.p2.px - state.p1.px;
+        const dy = state.p2.py - state.p1.py;
+        const d_px = Math.hypot(dx, dy);
+        
+        // Vincenty-like approximation for Japan
+        const d_lat = (state.p2.lat - state.p1.lat) * 111320;
+        const d_lng = (state.p2.lng - state.p1.lng) * 91000;
+        const d_m = Math.hypot(d_lat, d_lng);
+        
+        state.mPerPx = d_m / d_px;
+        state.mapNorthRad = Math.atan2(d_lng, d_lat) - Math.atan2(dx, -dy);
+    }
+
+    // --- Tracking & Sync ---
+    function startTrackingProcess() {
+        if(!navigator.geolocation) return alert("GPS非対応デバイスです");
+        
+        navigator.geolocation.watchPosition(pos => {
+            const { latitude, longitude, accuracy, heading } = pos.coords;
+            state.userPos.lat = latitude;
+            state.userPos.lng = longitude;
+            state.userPos.heading = heading || 0;
+            
+            document.getElementById('gps-accuracy').innerText = `Accuracy: ${Math.round(accuracy)}m`;
+            document.getElementById('hud-lat').innerText = latitude.toFixed(6);
+            document.getElementById('hud-lng').innerText = longitude.toFixed(6);
+
+            // Coordinate Transformation
+            const latDiff = (latitude - state.p1.lat) * 111320;
+            const lngDiff = (longitude - state.p1.lng) * 91000;
+            const dist = Math.hypot(latDiff, lngDiff);
+            const angle = Math.atan2(lngDiff, latDiff) - state.mapNorthRad;
+
+            state.userPos.x = state.p1.px + (dist / state.mPerPx) * Math.sin(angle);
+            state.userPos.y = state.p1.py - (dist / state.mPerPx) * Math.cos(angle);
+
+            updateUserUI();
+            if(state.isSyncing) syncPosition();
+        }, err => console.error(err), { enableHighAccuracy: true });
+    }
+
+    function updateUserUI() {
+        nodes.user.style.display = 'block';
+        nodes.user.style.transform = `translate(${state.userPos.x}px, ${state.userPos.y}px) rotate(${state.userPos.heading}deg)`;
+        
+        if(state.isTracking) {
+            const centerX = window.innerWidth / 2;
+            const centerY = window.innerHeight / 2;
+            state.x = centerX - state.userPos.x * state.scale;
+            state.y = centerY - state.userPos.y * state.scale;
+        }
+    }
+
+    // --- Firebase Sync ---
+    function toggleSharing() {
+        state.isSyncing = !state.isSyncing;
+        const ind = document.getElementById('sync-indicator');
+        ind.style.background = state.isSyncing ? 'var(--success)' : 'var(--danger)';
+        haptic();
+        
+        if(state.isSyncing) {
+            const userRef = window.fb.ref(window.fb.db, `projects/${state.projectName}/users/${state.userId}`);
+            window.fb.onDisconnect(userRef).remove();
+            
+            window.fb.onValue(window.fb.ref(window.fb.db, `projects/${state.projectName}/users`), snapshot => {
+                const users = snapshot.val();
+                renderOtherUsers(users);
+            });
+        }
+    }
+
+    function syncPosition() {
+        if(!window.fb) return;
+        const userRef = window.fb.ref(window.fb.db, `projects/${state.projectName}/users/${state.userId}`);
+        window.fb.update(userRef, {
+            x: state.userPos.x,
+            y: state.userPos.y,
+            ts: Date.now()
+        });
+    }
+
+    function renderOtherUsers(users) {
+        const layer = document.getElementById('other-cursors-layer');
+        layer.innerHTML = '';
+        if(!users) return;
+        
+        Object.keys(users).forEach(id => {
+            if(id === state.userId) return;
+            const u = users[id];
+            const div = document.createElement('div');
+            div.className = 'cursor-other';
+            div.style.left = u.x + 'px';
+            div.style.top = u.y + 'px';
+            layer.appendChild(div);
+        });
+    }
+
+    // --- Utilities ---
+    function setTracking(val) {
+        state.isTracking = val;
+        document.getElementById('lock-btn').style.color = val ? 'var(--accent)' : 'var(--text)';
+        document.getElementById('lock-btn').style.borderColor = val ? 'var(--accent)' : 'var(--glass-border)';
+    }
+
+    function toggleTracking() { setTracking(!state.isTracking); haptic(); }
+
+    function resetView() {
+        state.scale = 1;
+        setTracking(true);
+        haptic();
+    }
+
+    function haptic() { if(window.navigator.vibrate) window.navigator.vibrate(15); }
+
+    function render() {
+        nodes.container.style.transform = `translate(${state.x}px, ${state.y}px) scale(${state.scale})`;
+        
+        // Scale Bar Logic
+        if(state.mPerPx) {
+            const pxFor100m = 100 / (state.mPerPx * state.scale);
+            if(pxFor100m > 5) {
+                nodes.scale.style.display = 'flex';
+                document.getElementById('scale-bar').style.width = pxFor100m + 'px';
+                document.getElementById('scale-label').innerText = `100m`;
+            } else {
+                nodes.scale.style.display = 'none';
+            }
+        }
+        requestAnimationFrame(render);
+    }
+
+    // --- Local Persistence ---
+    function saveProject() {
+        const data = {
+            name: state.projectName,
+            p1: state.p1, p2: state.p2,
+            mPerPx: state.mPerPx, mapNorthRad: state.mapNorthRad,
+            img: nodes.img.src
+        };
+        const saved = JSON.parse(localStorage.getItem('map_projects') || '[]');
+        saved.push(data);
+        localStorage.setItem('map_projects', JSON.stringify(saved));
+    }
+
+    function showSavedList() {
+        const saved = JSON.parse(localStorage.getItem('map_projects') || '[]');
+        const container = document.getElementById('map-list-container');
+        container.innerHTML = saved.length ? '' : '<p style="font-size:12px; opacity:0.5;">データがありません</p>';
+        
+        saved.forEach((proj, i) => {
+            const item = document.createElement('div');
+            item.className = 'map-item';
+            item.innerHTML = `<span>${proj.name}</span><button class="blue" style="width:auto; padding:6px 12px; margin:0; font-size:12px;">LOAD</button>`;
+            item.onclick = () => loadProject(proj);
+            container.appendChild(item);
+        });
+        showStep(3);
+    }
+
+    function loadProject(proj) {
+        state.projectName = proj.name;
+        state.p1 = proj.p1; state.p2 = proj.p2;
+        state.mPerPx = proj.mPerPx; state.mapNorthRad = proj.mapNorthRad;
+        nodes.img.src = proj.img;
+        nodes.img.onload = () => {
+            nodes.img.style.display = 'block';
+            document.getElementById('project-display-name').innerText = state.projectName;
+            startTrackingProcess();
+            showStep(4);
+        };
+    }
+
+    // Start Engine
+    render();
+</script>
+</body>
+</html>
