@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presentation App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px); /* Safari対応 */
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+    </style>
+</head>
+<body class="h-screen w-screen bg-black overflow-hidden flex flex-col">
+
+    <div id="display-area" class="flex-1 relative">
+        <img id="product-img" src="https://images.unsplash.com/photo-1441986300917-64674bd600d8" class="w-full h-full object-cover">
+        
+        <div class="absolute bottom-0 w-full h-1/4 glass-panel p-6 text-white transition-opacity duration-500">
+            <h2 id="copy-title" class="text-3xl font-bold">商品タイトル</h2>
+            <p id="copy-text" class="mt-2 text-lg">ここに対話形式で設定された説明文がフローティング表示されます。</p>
+        </div>
+    </div>
+
+    <div id="config-panel" class="absolute top-4 left-4 p-4 glass-panel rounded-lg text-white w-64 shadow-xl">
+        <h3 class="font-bold mb-3 border-b border-white/20 pb-1">構成設定</h3>
+        <div id="checkbox-group" class="space-y-2">
+            </div>
+    </div>
+
+    <script>
+        const fields = [
+            { id: 'image', label: '商品画像の表示' },
+            { id: 'title', label: 'タイトルの表示' },
+            { id: 'desc', label: '説明文の表示' }
+        ];
+
+        const container = document.getElementById('checkbox-group');
+        fields.forEach(field => {
+            const wrapper = document.createElement('div');
+            wrapper.className = "flex items-center space-x-2";
+            wrapper.innerHTML = `<input type="checkbox" id="${field.id}" checked class="w-4 h-4"> <label>${field.label}</label>`;
+            container.appendChild(wrapper);
+            
+            wrapper.querySelector('input').addEventListener('change', (e) => {
+                const target = document.getElementById('copy-title'); // 例としてタイトルをトグル
+                if (field.id === 'title') {
+                    target.style.display = e.target.checked ? 'block' : 'none';
+                }
+            });
+        });
+    </script>
+</body>
+</html>
