@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>指先トラッキング</title>
+    <style>
+        body { margin: 0; background: #333; color: #fff; text-align: center; font-family: sans-serif; }
+        #log { margin: 10px; font-size: 14px; color: #ffeb3b; }
+        .container { position: relative; width: 100vw; height: 50vh; }
+        #webcam { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        #start-btn { padding: 20px 40px; font-size: 24px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+
+<div id="log">準備完了: ボタンを押してください</div>
+<div class="container">
+    <video id="webcam" autoplay playsinline></video>
+</div>
+<button id="start-btn">カメラを起動</button>
+
+<script type="module">
+    import { Hands } from "https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js";
+    const log = document.getElementById('log');
+    const btn = document.getElementById('start-btn');
+
+    btn.addEventListener('click', async () => {
+        log.innerText = "カメラを起動中...";
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+            document.getElementById('webcam').srcObject = stream;
+            log.innerText = "カメラ起動成功！モデル読み込み中...";
+            
+            // ここで止まっている場合はMediaPipeの読み込みエラーです
+            const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+            log.innerText = "モデル初期化完了";
+        } catch (err) {
+            log.innerText = "エラー発生: " + err.name + " - " + err.message;
+        }
+    });
+</script>
+</body>
+</html>
