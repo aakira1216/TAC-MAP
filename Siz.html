@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>指先計測システム</title>
+    <style>
+        body { margin: 0; background: #000; color: #fff; text-align: center; font-family: sans-serif; }
+        .container { position: relative; }
+        #log { padding: 20px; font-size: 18px; color: #00FF00; }
+        #start-btn { padding: 20px 40px; font-size: 20px; background: #007bff; color: white; border: none; border-radius: 10px; cursor: pointer; display: none; }
+        #webcam { width: 100%; height: auto; display: block; }
+        /* 映像の上に重ねるキャンバス */
+        #output_canvas { position: absolute; top: 0; left: 0; width: 100%; height: auto; }
+    </style>
+</head>
+<body>
+    <div id="log">AIモデルを読み込み中...</div>
+    <div class="container">
+        <button id="start-btn">カメラを起動して計測開始</button>
+        <video id="webcam" autoplay playsinline></video>
+        <canvas id="output_canvas"></canvas>
+    </div>
+
+    <script type="module">
+        import { Hands } from "https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js";
+        
+        const log = document.getElementById('log');
+        const btn = document.getElementById('start-btn');
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('output_canvas');
+        const ctx = canvas.getContext('2d');
+
+        let hands;
+
+        // 1. AIモデルの準備
+        try {
+            hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+            hands.setOptions({ maxNumHands: 1, modelComplexity: 1 });
+            
+            // 指を認識した時の処理
+            hands.onResults((results) => {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                if (results.multiHandLandmarks) {
+                    for (const landmarks of results.multiHandLandmarks) {
+                        const pt = landmarks[8]; // 人差し指の先
+                        ctx.fillStyle = '#00FF00';
+                        ctx.beginPath();
+                        ctx.arc(pt.x * canvas.width, pt.y * canvas.height, 20, 0, 2 * Math.PI);
+                        ctx.fill();
+                    }
+                }
+            });
+            log.innerText = "読み込み成功！AIモデルの準備が完了しました。";
+            btn.style.display = "inline-block";
+        } catch (err) {
+            log.innerText = "読み込み失敗: " + err.message;
+        }
+
+        // 2. ボタンを押したらカメラ起動＋AI解析ループ
+        btn.onclick = async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment' } 
+                });
+                video.srcObject = stream;
+                btn.style.display = "none";
+                log.innerText = "カメラ起動中...指を映してください";
+
+                async function detect() {
+                    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                        await hands.send({image: video});
+                    }
+                    requestAnimationFrame(detect);
+                }
+                detect();
+            } catch (err) {
+                log.innerText = "カメラエラー: " + err.message;
+            }
+        };
+    </script>
+</body>
+</html>
