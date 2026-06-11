@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        /* 映像を大きく表示するためのスタイル */
+        #webcam { width: 100%; height: auto; display: block; }
+    </style>
+</head>
+<body id="body">
+    <h1 id="status">準備完了</h1>
+    <button id="test-btn" style="padding: 20px; font-size: 20px;">タップしてカメラ起動</button>
+    
+    <video id="webcam" autoplay playsinline></video>
+
+    <script>
+        document.getElementById('test-btn').onclick = () => {
+            const video = document.getElementById('webcam');
+            
+            document.getElementById('status').innerText = "カメラ起動中...";
+            
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    // ここで video タグとカメラを接続する
+                    video.srcObject = stream;
+                    document.getElementById('status').innerText = "カメラ起動成功！";
+                    document.getElementById('body').style.backgroundColor = "#ccffcc";
+                    document.getElementById('test-btn').style.display = "none"; // ボタンを隠す
+                })
+                .catch(err => {
+                    document.getElementById('status').innerText = "エラー: " + err.message;
+                });
+        };
+    </script>
+</body>
+</html>
