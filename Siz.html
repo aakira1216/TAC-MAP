@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>指先計測システム</title>
+    <style>
+        body { margin: 0; background: #000; color: #fff; text-align: center; font-family: sans-serif; }
+        
+        /* 映像コンテナ：カメラ映像を全画面で表示 */
+        #container { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+        #webcam { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+        /* 計測開始ボタン：画像の上に配置 */
+        #start-btn { 
+            position: absolute; 
+            top: 50%; left: 50%; 
+            transform: translate(-50%, -50%);
+            padding: 20px 40px; 
+            font-size: 20px; 
+            background: rgba(0, 123, 255, 0.8); 
+            color: white; 
+            border: none; 
+            border-radius: 10px; 
+            cursor: pointer; 
+            z-index: 100;
+        }
+
+        #log { position: absolute; top: 10px; width: 100%; color: #00FF00; z-index: 50; pointer-events: none; }
+    </style>
+</head>
+<body>
+    <div id="log">準備完了</div>
+    <div id="container">
+        <button id="start-btn">計測を開始</button>
+        <video id="webcam" autoplay playsinline></video>
+    </div>
+
+    <script type="module">
+        const log = document.getElementById('log');
+        const btn = document.getElementById('start-btn');
+        const video = document.getElementById('webcam');
+
+        // ボタンが押されたときカメラを起動
+        btn.onclick = async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment' } 
+                });
+                video.srcObject = stream;
+                log.innerText = "カメラ起動成功！";
+                btn.style.display = "none"; // 起動したらボタンを消す
+            } catch (err) {
+                log.innerText = "カメラエラー: " + err.message;
+            }
+        };
+    </script>
+</body>
+</html>
