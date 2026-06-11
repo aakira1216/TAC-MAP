@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>背面カメラ起動テスト</title>
+    <style>
+        body { margin: 0; background: #333; color: #fff; text-align: center; font-family: sans-serif; }
+        #status { padding: 10px; font-size: 16px; }
+        #webcam { width: 100%; height: auto; display: block; background: #000; }
+        #test-btn { padding: 20px 40px; font-size: 20px; margin: 20px; cursor: pointer; }
+    </style>
+</head>
+<body id="body">
+    <h1 id="status">準備完了</h1>
+    <button id="test-btn">背面カメラで起動</button>
+    
+    <video id="webcam" autoplay playsinline></video>
+
+    <script>
+        document.getElementById('test-btn').onclick = () => {
+            const video = document.getElementById('webcam');
+            const status = document.getElementById('status');
+            
+            status.innerText = "カメラ起動中...";
+            
+            // facingMode: 'environment' で背面カメラを指定
+            navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: 'environment' } 
+            })
+            .then(stream => {
+                video.srcObject = stream;
+                status.innerText = "背面カメラ起動成功！";
+                document.getElementById('body').style.backgroundColor = "#ccffcc";
+                document.getElementById('test-btn').style.display = "none";
+            })
+            .catch(err => {
+                status.innerText = "エラー: " + err.message;
+                console.error(err);
+            });
+        };
+    </script>
+</body>
+</html>
