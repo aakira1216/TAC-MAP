@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>指先計測・最終調整</title>
+    <style>
+        body { margin: 0; background: #000; overflow: hidden; }
+        .container { position: relative; width: 100vw; height: 100vh; }
+        #webcam { width: 100%; height: 100%; object-fit: cover; display: none; }
+        #output_canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        #start-btn { position: absolute; z-index: 10; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 20px 40px; font-size: 20px; }
+        #status { position: absolute; z-index: 15; top: 10%; width: 100%; color: #ffeb3b; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="status">準備完了</div>
+    <button id="start-btn">計測を開始</button>
+    <video id="webcam" autoplay playsinline></video>
+    <canvas id="output_canvas"></canvas>
+</div>
+
+<script type="module">
+    import { Hands } from "https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js";
+
+    const video = document.getElementById('webcam');
+    const canvas = document.getElementById('output_canvas');
+    const ctx = canvas.getContext('2d');
+    const btn = document.getElementById('start-btn');
+    const status = document.getElementById('status');
+
+    btn.onclick = async () => {
+        btn.style.display = "none";
+        status.innerText = "カメラ起動中...";
+
+        // 1. カメラ起動
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        video.srcObject = stream;
+        video.style.display = "block";
+
+        // 映像が準備できるまで待機
+        await new Promise((resolve) => video.onloadedmetadata = resolve);
+
+        // 2. AIの設定
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1 });
+        
+        hands.onResults((results) => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (results.multiHandLandmarks) {
+                status.innerText = "指を認識中！";
+                for (const landmarks of results.multiHandLandmarks) {
+                    const pt = landmarks[8];
+                    ctx.fillStyle = '#00FF00';
+                    ctx.beginPath();
+                    ctx.arc(pt.x * canvas.width, pt.y * canvas.height, 20, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+            } else {
+                status.innerText = "手を映してください...";
+            }
+        });
+
+        // 3. ループ実行
+        async function detect() {
+            await hands.send({image: video});
+            requestAnimationFrame(detect);
+        }
+        detect();
+    };
+</script>
+</body>
+</html>
