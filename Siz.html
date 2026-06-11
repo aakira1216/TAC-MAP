@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI計測システム</title>
+    <style>
+        body { margin: 0; background: #000; color: #fff; text-align: center; font-family: sans-serif; }
+        #log { padding: 10px; color: #ffeb3b; }
+        #webcam { width: 100%; display: block; }
+        #start-btn { padding: 20px; font-size: 20px; background: #007bff; color: #fff; border: none; }
+    </style>
+</head>
+<body>
+    <div id="log">AIモデルを読み込み中...</div>
+    <button id="start-btn" style="display:none;">計測を開始</button>
+    <video id="webcam" autoplay playsinline></video>
+
+    <script type="module">
+        import { Hands } from "https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js";
+        
+        const log = document.getElementById('log');
+        const btn = document.getElementById('start-btn');
+        const video = document.getElementById('webcam');
+
+        // ライブラリの読み込みが成功した瞬間にボタンを表示
+        log.innerText = "AIモデル読み込み完了！";
+        btn.style.display = "inline-block";
+
+        btn.onclick = async () => {
+            log.innerText = "カメラを起動中...";
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment' } 
+                });
+                video.srcObject = stream;
+                log.innerText = "起動成功。指を映してください。";
+                
+                // ここで実際に計測ロジックを動かす準備を行う
+                console.log("Ready for measurement");
+            } catch (err) {
+                log.innerText = "エラー: " + err.message;
+            }
+        };
+    </script>
+</body>
+</html>
