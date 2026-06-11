@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>診断用コード</title>
+    <style>
+        body { margin: 0; background: #333; color: #fff; text-align: center; font-family: sans-serif; overflow: hidden; height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        .container { position: relative; width: 100%; height: 60vh; border: 2px solid #fff; margin-bottom: 20px; }
+        #webcam { width: 100%; height: 100%; object-fit: cover; }
+        #start-btn { padding: 20px 40px; font-size: 20px; background-color: #007bff; color: white; border: none; border-radius: 10px; cursor: pointer; }
+    </style>
+</head>
+<body id="body">
+    <div id="status">準備完了</div>
+    <div class="container">
+        <video id="webcam" autoplay playsinline></video>
+    </div>
+    <button id="start-btn">背面カメラを起動</button>
+
+    <script>
+        // MediaPipeの読み込みを完全に排除しました。
+        const video = document.getElementById('webcam');
+        const status = document.getElementById('status');
+        const btn = document.getElementById('start-btn');
+
+        btn.onclick = async () => {
+            status.innerText = "カメラ起動を試みています...";
+            btn.style.display = "none";
+
+            try {
+                // 背面カメラの設定
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment' } 
+                });
+                video.srcObject = stream;
+                status.innerText = "背面カメラ起動成功！";
+                document.getElementById('body').style.backgroundColor = "#ccffcc";
+            } catch (err) {
+                status.innerText = "カメラエラー: " + err.message;
+                status.style.color = "red";
+                console.error("カメラ起動失敗:", err);
+                btn.style.display = "block"; // エラーならボタンを戻す
+            }
+        };
+    </script>
+</body>
+</html>
