@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>指先トラッキング</title>
+    <style>
+        body { margin: 0; background: #000; color: #fff; text-align: center; }
+        .container { position: relative; width: 100vw; max-width: 640px; margin: 0 auto; }
+        #webcam { width: 100%; display: block; transform: scaleX(-1); }
+        #output_canvas { position: absolute; top: 0; left: 0; width: 100%; transform: scaleX(-1); }
+        #start-btn { position: absolute; z-index: 10; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 20px; font-size: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <button id="start-btn">カメラを起動</button>
+    <video id="webcam" autoplay playsinline></video>
+    <canvas id="output_canvas"></canvas>
+</div>
+
+<script type="module">
+    import { Hands } from "https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js";
+
+    const video = document.getElementById('webcam');
+    const canvas = document.getElementById('output_canvas');
+    const ctx = canvas.getContext('2d');
+    const btn = document.getElementById('start-btn');
+
+    // ボタンを押したら起動
+    btn.addEventListener('click', async () => {
+        btn.style.display = 'none'; // ボタンを消す
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+            video.srcObject = stream;
+            
+            const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+            hands.setOptions({ maxNumHands: 1, modelComplexity: 1 });
+            hands.onResults((results) => {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                if (results.multiHandLandmarks) {
+                    const fingerTip = results.multiHandLandmarks[0][8];
+                    const x = fingerTip.x * canvas.width;
+                    const y = fingerTip.y * canvas.height;
+                    ctx.fillStyle = '#00FF00';
+                    ctx.beginPath();
+                    ctx.arc(x, y, 10, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+            });
+
+            async function detect() {
+                await hands.send({image: video});
+                requestAnimationFrame(detect);
+            }
+            detect();
+        } catch (err) {
+            alert("カメラエラー: " + err.message);
+        }
+    });
+</script>
+</body>
+</html>
