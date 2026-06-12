@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>指先計測システム v1.3</title>
+    <style>
+        body { margin: 0; background: #000; color: #fff; text-align: center; font-family: sans-serif; }
+        #log { padding: 20px; font-size: 18px; color: #00FF00; }
+        #start-btn { padding: 20px 40px; font-size: 20px; background: #007bff; color: white; border: none; border-radius: 10px; cursor: pointer; display: none; }
+        #webcam { width: 100%; height: auto; display: block; }
+        
+        #video-container { position: relative; }
+        #measure-btn {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            padding: 20px 40px; font-size: 20px; background: #28a745; color: white;
+            border: none; border-radius: 10px; cursor: pointer; display: none; z-index: 10;
+        }
+        #output_canvas { position: absolute; top: 0; left: 0; width: 100%; height: auto; pointer-events: none; }
+    </style>
+</head>
+<body>
+    <div id="log">AIモデルを読み込み中...</div>
+    <button id="start-btn">カメラを起動して計測開始</button>
+    
+    <div id="video-container">
+        <button id="measure-btn">計測開始</button>
+        <video id="webcam" autoplay playsinline></video>
+        <canvas id="output_canvas"></canvas>
+    </div>
+
+    <script type="module">
+        import { Hands } from "https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js";
+
+        const log = document.getElementById('log');
+        const btn = document.getElementById('start-btn');
+        const measureBtn = document.getElementById('measure-btn');
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('output_canvas');
+        const ctx = canvas.getContext('2d');
+
+        let hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1 });
+
+        // モデルロード完了後の表示ロジック
+        hands.onResults((results) => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (results.multiHandLandmarks) {
+                for (const landmarks of results.multiHandLandmarks) {
+                    const pt = landmarks[8];
+                    ctx.fillStyle = '#00FF00';
+                    ctx.beginPath();
+                    ctx.arc(pt.x * canvas.width, pt.y * canvas.height, 15, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+            }
+        });
+
+        // 成功したベースフロー：ページ読み込み完了後にボタンを表示
+        window.addEventListener('load', () => {
+            log.innerText = "読み込み成功！AIモデルの準備が完了しました。";
+            btn.style.display = "inline-block";
+        });
+
+        // 1. カメラ起動
+        btn.onclick = async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment' } 
+                });
+                video.srcObject = stream;
+                log.innerText = "カメラ起動成功！";
+                btn.style.display = "none";
+                measureBtn.style.display = "inline-block";
+            } catch (err) {
+                log.innerText = "カメラエラー: " + err.message;
+            }
+        };
+
+        // 2. 計測開始
+        measureBtn.onclick = async () => {
+            measureBtn.style.display = "none";
+            log.innerText = "追跡中...";
+            async function detect() {
+                if (video.readyState >= 2) await hands.send({image: video});
+                requestAnimationFrame(detect);
+            }
+            detect();
+        };
+    </script>
+</body>
+</html>
